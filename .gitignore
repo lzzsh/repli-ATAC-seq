@@ -1,0 +1,10 @@
+*
+!*/
+!.gitignore
+!**/*.sh
+!**/*.R
+!**/*.Rmd
+!**/*.py
+!**/*.ipynb
+.Rproj.user
+ref_code/
