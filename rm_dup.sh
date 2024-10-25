@@ -9,9 +9,10 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=liaozizhuo@westlake.edu.cn
 
-module load
+module load samtools/1.13
 
 cd /public/home/whli/data/ATACellstage/bwa_all_rawdata
+
 for file in $(ls *bam);do
 	prefix=${file%%\.*}
 	samtools sort -n ${prefix}.bam -o ${prefix}_sort.bam 
