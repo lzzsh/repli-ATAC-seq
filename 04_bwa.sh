@@ -18,7 +18,7 @@ mkdir ../bwa_all_rawdata
 out="/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata"
 for file in $(ls *1P.fq.gz);do
 	prefix=${file%_*}
-	bwa mem rice_all_genomes_v7_bwa_index -t 10 -M -k 32 -R '@RG\tID:${prefix}\tSM:${prefix}\tLB:${prefix}\tPL:illumina' ${prefix}_1P.fq.gz ${prefix}_2P.fq.gz | samtools view -ubhS > ${out}/${prefix}.bam
+	bwa mem /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/bwa_index/rice_all_genomes_v7.fasta -t 10 -M -k 32 -R '@RG\tID:${prefix}\tSM:${prefix}\tLB:${prefix}\tPL:illumina' ${prefix}_1P.fq.gz ${prefix}_2P.fq.gz | samtools view -ubhS > ${out}/${prefix}.bam
 	sleep 1
 done
 
