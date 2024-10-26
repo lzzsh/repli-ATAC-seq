@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -c 4
+#SBATCH -c 8
 #SBATCH --mem=32GB
 #SBATCH -J rmdup
 #SBATCH -o rmdup.%j.out
@@ -11,7 +11,7 @@
 
 module load samtools/1.13
 
-cd /public/home/whli/data/ATACellstage/bwa_all_rawdata
+cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata
 
 for file in $(ls *bam);do
 	prefix=${file%%\.*}
