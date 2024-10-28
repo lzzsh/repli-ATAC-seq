@@ -9,7 +9,7 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=liaozizhuo@westlake.edu.cn
 
-cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/01.RawData
+cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/01.RawData
 
 for file in *R1.fastq.gz.md5; do
     prefix=${file%_*}
