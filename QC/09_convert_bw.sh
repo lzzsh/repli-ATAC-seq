@@ -13,6 +13,11 @@
 cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata
 mkdir bws
 
+#make index
+for bam in ./*_q30.bam; do
+    samtools index "$bam"
+done
+
 #mkdir bws
 for file in $(find ./ -name '*q30.bam');do
 	name=$(basename ${file})
