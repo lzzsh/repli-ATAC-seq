@@ -17,6 +17,7 @@ for file in $(find ./ -name '*q30.bam');do
         name=$(basename ${file})
         prefix=${name%%_*}
         macs2 callpeak -t  ${name} -n ${prefix} --shift 100 --extsize 200 --nomodel -B --SPMR -g 3.3E8  -q 0.01 --outdir ${out}/${prefix}_out 2> ${out}/${prefix}.macs2.log
+        sort -k8,8nr ${out}/${prefix}_out/${prefix}_peaks.narrowPeak > ${out}/${prefix}_out/${prefix}_peaks_sort.narrowPeak
         sleep 1
 done
 
