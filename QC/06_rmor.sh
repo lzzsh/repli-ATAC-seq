@@ -15,6 +15,6 @@ cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata
 
 for file in $(ls *_sort_rmdup.bam);do
 	prefix=${file%\.*}
-	samtools view -h ${file} | grep -v 'chr13\|chr14' | samtools view -bh > ${prefix}_rmor.bam
+	samtools view -h ${file} | grep -v 'chr13\|chr14\|chrSy\|chrUn' | samtools view -bh > ${prefix}_rmor.bam
 	sleep 1
 done
