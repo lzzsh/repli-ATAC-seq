@@ -1,6 +1,6 @@
 library(GenomicRanges)
 library(GenomicFeatures)
-setwd("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/tss_plot")
+setwd("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_control/tss_plot")
 gff3 <- read.table('/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/all_DIY.gff3',stringsAsFactors=F,sep='\t')
 ids <- gff3$V3 == 'gene'
 genes <- data.frame(chr=gff3$V1[ids],start=gff3$V4[ids],end=gff3$V5[ids],strand=gff3$V7[ids],featrure=gff3$V3[ids],stringsAsFactors=F)
@@ -10,7 +10,7 @@ promoters.gr <-promoters(genes.gr,upstream=0,downstream=1)
 chr_quant <- function(x){
 data_name <- basename(x)
 data_name <- gsub('.bam','',data_name)
-comm <- sprintf('samtools view -bh -F 260 %s |python extract_quan_in_flag_260_chr_pos.py',x)
+comm <- sprintf('samtools view -bh -F 260 %s |python ../scripts/extract_quan_in_flag_260_chr_pos.py',x)
 data<-matrix(scan(fa<-pipe(comm),''),ncol=2,byrow=T)
 colnames(data)<- c('chr','pos')
 data <- data.frame(chr=data[,1],start=as.numeric(data[,2]),end=as.numeric(data[,2]),stringsAsFactors=F)
@@ -18,9 +18,9 @@ data.gr <- makeGRangesFromDataFrame(data)
 dis <-distanceToNearest(data.gr,promoters.gr,ignore.strand=T)
 res <- data.frame(promoters.gr[subjectHits(dis)]@ranges@start,data[queryHits(dis),2],promoters.gr[subjectHits(dis)]@strand,stringsAsFactors=F)
 ids1 <- res[,3] == "+"
-dis1 <- res[ids1,2] - res[ids1,1] #正链: 酶切位点位置-TSS位置；
+dis1 <- res[ids1,2] - res[ids1,1] #正�[m~S: �[m~E�[m~H~G�[m~M�[m~B�[m~M置-TSS�[m~M置�[m~[
 ids2 <- res[,3] == "-"
-dis2 <- res[ids2,1] - res[ids2,2] #负链: TSS位置-酶切位点位置；
+dis2 <- res[ids2,1] - res[ids2,2] #�[m~_�[m~S: TSS�[m~M置-�[m~E�[m~H~G�[m~M�[m~B�[m~M置�[m~[
 dis <- c(dis1,dis2)
 assign(sprintf('%s_tss',data_name),dis)
 save(list=sprintf('%s_tss',data_name),file=sprintf('./%s_tss.RData',data_name))
@@ -44,5 +44,6 @@ chr_quant(i)
 }
 
 #file_list(Args[6])
-files <- list.files('/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata','*_q30.bam',full.names=T)
+files <- list.files('/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_control/bwa_all_rawdata','*_q30.bam',full.names=T)
 file_list(files)
+~
