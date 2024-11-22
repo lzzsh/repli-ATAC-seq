@@ -12,6 +12,6 @@
 module load samtools/1.13
 module load R/4.4.0
 
-cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/
+cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_control
 mkdir tss_plot
-Rscript tss_enrichment.R
+Rscript ./scripts/tss_enrichment.R
