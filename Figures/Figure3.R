@@ -1,8 +1,8 @@
 library(ChIPseeker)
 library(ggplot2)
 files <- getSampleFiles()
-files <- list.files("~/Desktop/R所需文件/peaks/")
-setwd("~/Desktop/R所需文件/peaks")
+files <- list.files("~/Desktop/Rfiles/peaks/")
+setwd("~/Desktop/Rfiles/peaks")
 peak=GenomicRanges::GRangesList(ES=readPeakFile(files[4]),MS=readPeakFile(files[5]),LS=readPeakFile(files[6]))
 covplot(peak, weightCol="V5",chrs=c("chr1","chr2","chr3","chr4","chr5","chr6","chr7","chr8","chr9","chr10","chr11","chr12"))+ 
   facet_grid(chr ~ .id)
