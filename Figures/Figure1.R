@@ -1,5 +1,8 @@
-# load gff which contains the RT location of each open chromatin region
 library(dplyr)
+library(ggplot2)
+library(ggstatsplot)
+
+# load gff which contains the RT location of each open chromatin region
 gff<-read.table("~/Desktop/Rfiles/segamentation/rbq_gff.gff3",skip = 2,comment.char = "")
 gff<-gff[,c(1,4,5,9)]
 colnames(gff)<-c("chr","start","end","RT")
@@ -12,9 +15,7 @@ RT_length<-gff %>% group_by(RT)%>%
   summarise(Sum = sum(length))
 RT_length$freq<-RT_length[,2]/sum(RT_length[,2])
 
-library(ggplot2)
-library(ggstatsplot)
-mupdate.packages()
+# pie chart
 gff$RT <- factor(gff$RT,levels = c("EML","EL","L","ML","M","EM","E"))
 p5 <- ggpiestats(gff, 'RT',  
                  results.subtitle = F, 
@@ -30,7 +31,7 @@ p5
 
 gff$length<-log2((gff$end-gff$start+1))
 
-# plot
+# boxplot
 gff$RT <- factor(gff$RT,levels = c("E","EM","M","ML","L","EL","EML"))
 pic <- ggplot(data = gff, aes(x = RT, y = length))+   
   geom_boxplot(aes(color = RT))+ 
