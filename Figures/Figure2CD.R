@@ -1,14 +1,14 @@
 library(rtracklayer)
 library(dplyr)
-gtf_data = import('~/Desktop/R所需文件/all_DIY.gff3')
+gtf_data = import('~/Desktop/Rfiles/all_DIY.gff3')
 gtf_data = as.data.frame(gtf_data)
 gene_data <- gtf_data[which(!is.na(gtf_data[,11]) & gtf_data[,7]=="gene"),c(1,2,3,11)]
 
-TSS_RT <- read.table("~/Desktop/R所需文件/peaks划分/TSS_peaks_unit") %>%
+TSS_RT <- read.table("~/Desktop/Rfiles/peak_unit/TSS_peaks_unit") %>%
   select(c(1,2,3,7,8)) %>%
   setNames(c("chrom","Start","End","RT","Length"))
 
-genetxt <- read.table("~/Desktop/R所需文件/gene_rpkm.txt")
+genetxt <- read.table("~/Desktop/Rfiles/gene_rpkm.txt")
 genetxt <- unique(genetxt[,c(2,3,4,5,1)]) %>%
   setNames(c("chrom","Start","End","strand","Geneid"))
 
@@ -19,7 +19,7 @@ gene_rpkm <- merge(gene_rpkm[,1:5],genetxt,by=c("chrom","Start","End")) %>%
   select(c(7,1,2,3,6,4,5)) %>%
   arrange(across(everything()))
 
-rpkm <- read.table("~/Desktop/R所需文件/peaks划分/NIP_rep1_rep2_FPKM.featureCounts.matrix", header = T, skip = 185)
+rpkm <- read.table("~/Desktop/Rfiles/peak_unit/NIP_rep1_rep2_FPKM.featureCounts.matrix", header = T, skip = 185)
 colnames(rpkm) <- c("Geneid","NIP_rep1","FPKM","NIP_rep2","FPKM.1")
 rpkm <- rpkm[,c(1,3,5)]
 rpkm$FPKM_average <- (rpkm$FPKM + rpkm$FPKM.1) / 2
