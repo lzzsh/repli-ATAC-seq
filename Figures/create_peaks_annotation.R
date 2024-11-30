@@ -1,4 +1,5 @@
-peaks_reads<-read.table("~/Desktop/R所需文件/idrpeaks_depth_rbq.txt")
+# normalization the reads of each RT
+peaks_reads<-read.table("~/Desktop/Rfiles/idrpeaks_depth_rbq.txt")
 peaks_reads[,4]<-peaks_reads[,4]/22706283*1000000
 peaks_reads[,5]<-peaks_reads[,5]/6987114*1000000
 peaks_reads[,6]<-peaks_reads[,6]/26255468*1000000
@@ -51,7 +52,7 @@ peaks_RT<-peaks_RT[,c(1,6,10,2,3,7,8,9,5)]
 
 
 #####ZH11
-peaks_reads_ZH11<-read.table("~/Desktop/R所需文件/idrpeaks_depth_ZH11.txt")
+peaks_reads_ZH11<-read.table("~/Desktop/Rfiles/idrpeaks_depth_ZH11.txt")
 peaks_reads_ZH11[,4]<-peaks_reads_ZH11[,4]/43880448*1000000
 peaks_reads_ZH11[,5]<-peaks_reads_ZH11[,5]/2474361*1000000
 peaks_reads_ZH11[,6]<-peaks_reads_ZH11[,6]/42767849*1000000
