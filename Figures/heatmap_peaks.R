@@ -4,7 +4,7 @@ gff<-gff[,c(1,4,5,9)]
 colnames(gff)<-c("chr","start","end","RT")
 gff$RT<-lapply(gff$RT, function(x) unlist(strsplit(x,";"))[1])
 gff$RT<-lapply(gff$RT, function(x) unlist(strsplit(x,"="))[2])
-gff<-gff[ !(gff$chr %in% c("chrUn","chrSy")),] #去除chrSy和chrUn
+gff<-gff[ !(gff$chr %in% c("chrUn","chrSy")),] # remove chrSy and chrUn
 gff[,4]<-gsub("S","",gff[,4])
 
 ES <- gff %>%
