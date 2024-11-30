@@ -1,5 +1,7 @@
 library(rtracklayer)
 library(dplyr)
+library(ggplot2)
+
 gtf_data = import('~/Desktop/Rfiles/all_DIY.gff3')
 gtf_data = as.data.frame(gtf_data)
 gene_data <- gtf_data[which(!is.na(gtf_data[,11]) & gtf_data[,7]=="gene"),c(1,2,3,11)]
@@ -59,7 +61,7 @@ RPKM_plot$RT = factor(RPKM_plot$RT,levels = c("E", "EM", "M","ML","L"))
 RPKM_plot$RPKM = factor(RPKM_plot$RPKM,levels = c("F=0","0<F<=1","1<F<=10",
                                                             "10<F<=100","F>100"))
 
-library(ggplot2)
+# normalization
 modify_plot <- merge(RPKM_plot,RT_freq,by="RT")
 modify_plot$Ratio <- modify_plot$Ratio/modify_plot$percent/100
 
