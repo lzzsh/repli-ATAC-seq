@@ -1,6 +1,7 @@
-# load histone_RT.bed file 
 library(dplyr)
 library(ggplot2)
+
+# load histone_RT.bed file 
 histone <- read.table("~/Desktop/Rfiles/peak_unit/modify_RT.bed")
 colnames(histone)[1:3]<- c("chr","start","end")
 
