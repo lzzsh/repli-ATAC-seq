@@ -1,4 +1,7 @@
 library(dplyr)
+library(pheatmap)
+library(vegan)
+
 tf_location<-read.table("~/Desktop//Rfiles/motif_class.txt")
 tf_location<-tf_location[,c(5,6,7,8,4,9,10,11)]
 colnames(tf_location)<-c("Chr","Start","End","TF","RT","Id","Strand","PeakID")
@@ -22,10 +25,10 @@ colnames(data.1)[1:7]<-c("E","EM","M","ML","L","EL","EML")
 rownames(data.1)<-data.1$motif_alt_id
 data.1<-data.1[,-8]
 
-library(pheatmap)
-library(vegan)
+# normalization
 data.1 <- as.data.frame(decostand(tf_location_nondup,"standardize",MARGIN = 2)) 
 
+# heatmap
 colnames(tf_location_nondup) <- c("E","EM","M","ML","L","EL","EML")
 pic_heatmap<-pheatmap(data.1,show_rownames = FALSE,show_colnames = TRUE,display_numbers = matrix(ifelse(data.1 > 2, ""," "), nrow(data.1)))
 
