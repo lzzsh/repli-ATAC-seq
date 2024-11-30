@@ -53,7 +53,7 @@ rownames(data.1)<-data.1$motif_alt_id
 
 
 ###########annotation of tf_location#######
-trans<-read.csv("~/Desktop/毕设文献/rice2ara.csv")
+trans<-read.csv("~/Desktop/repli-ATAC-seq/rice2ara.csv")
 geneid<-select(org.At.tair.db, keys = c(t(trans[,2])) ,
                column = c('ENTREZID', 'SYMBOL', 'REFSEQ'), keytype = 'TAIR')
 geneid<-distinct(geneid,TAIR,SYMBOL)
