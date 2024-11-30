@@ -1,17 +1,17 @@
 library(dplyr)
-tf_location<-read.table("~/Desktop//R所需文件/motif_class.txt")
+tf_location<-read.table("~/Desktop//Rfiles/motif_class.txt")
 tf_location<-tf_location[,c(5,6,7,8,4,9,10,11)]
 colnames(tf_location)<-c("Chr","Start","End","TF","RT","Id","Strand","PeakID")
 tf_location[,5]<-gsub("S","",tf_location[,5])
 tf_location_nondup<-distinct(tf_location,Chr,TF,RT,Id,Strand,PeakID, .keep_all= TRUE)
-# write.table(table(tf_location_nondup[,4],tf_location_nondup[,5]),"~/Desktop/R所需文件/tf_location_clssfied.bed",row.names = T,quote=F,sep = "\t",col.names = T)
+# write.table(table(tf_location_nondup[,4],tf_location_nondup[,5]),"~/Desktop/Rfiles/tf_location_clssfied.bed",row.names = T,quote=F,sep = "\t",col.names = T)
 
-tf_location_nondup<-as.data.frame(read.table("~/Desktop/R所需文件/tf_location_clssfied.bed",header = T))
+tf_location_nondup<-as.data.frame(read.table("~/Desktop/Rfiles/tf_location_clssfied.bed",header = T))
 tf_location_nondup<-tf_location_nondup[,c("E","EM","M","ML","L","EL","EML")]
 tf_location_nondup = t(apply(tf_location_nondup,1,function(x){x/sum(x)}))
 # tf_location_nondup <- t(apply(tf_location_nondup,1,function(x){log2(x/t(RT_freq$Percent))}))
 
-tf_family<-read.table("~/Desktop/R所需文件/fimo.bed",header = T ,sep = "\t")
+tf_family<-read.table("~/Desktop/Rfiles/fimo.bed",header = T ,sep = "\t")
 tf_family<-tf_family[,c(2,3)]
 tf_family<-distinct(tf_family,motif_alt_id ,TF_family,.keep_all= TRUE)
 
