@@ -19,7 +19,7 @@ transposon_rmspace[,5] <- "transposon"
 write.table(transposon_rmspace,"~/Desktop/Rfiles/transposon_rmspace.bed",row.names = F,quote=F,sep = "\t",col.names = F)
 
 # merge tss location and transposon
-TSS <- read.table("~/Desktop/Rfiles/peaks划分/TSS_location.bed")
+TSS <- read.table("~/Desktop/Rfiles/peak_unit/TSS_location.bed")
 TSS[,4] <- "gene"
 colnames(TSS) <- c("chr","start","end","type")
 
@@ -44,16 +44,16 @@ transposon_rmspace <- transposon_rmspace %>%
 transposon_class <- transposon_rmspace %>%
   select(chr,start,end,type)
 annotate <- rbind(transposon_class,TSS)
-# write.table(annotate,"~/Desktop/Rfiles/peaks划分/annotate.bed",row.names = F,quote=F,sep = "\t",col.names = F)
+# write.table(annotate,"~/Desktop/Rfiles/peak_unit/annotate.bed",row.names = F,quote=F,sep = "\t",col.names = F)
 
 # plot 
 library(tidyverse)
-annotate <- read.table("~/Desktop/R所需文件/peaks划分/annotate_RT.bed")
+annotate <- read.table("~/Desktop/Rfiles/peak_unit/annotate_RT.bed")
 annotate <- annotate %>%
   select(c(1,2,3,7)) %>%
   setNames(c("chr","start","end","feature"))
 
-unannotate <- read.table("~/Desktop/R所需文件/peaks划分/unannotate.bed")
+unannotate <- read.table("~/Desktop/Rfiles/peak_unit/unannotate.bed")
 unannotate <- unannotate %>%
   mutate(feature = "unannotate") %>%
   setNames(c("chr","start","end","feature"))
