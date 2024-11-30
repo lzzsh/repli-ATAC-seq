@@ -16,3 +16,5 @@ computeMatrix reference-point  -b 1000 -a 1000 -R /ES_peaks.txt EMS_peaks.txt MS
 --skipZeros  -o matrix_peaks.gz --outFileSortedRegions regions_peaks_MS.bed
 
 plotProfile -m matrix_peaks.gz  -out peak_profile.pdf  --refPointLabel peak --regionsLabel E EM M ML L --outFileSortedRegions location.bed --plotFileFormat pdf --perGroup
+plotHeatmap -m matrix_peaks.gz  -out peak_heatmap.pdf  --refPointLabel peak --regionsLabel E EM M ML L --outFileSortedRegions location.bed --plotFileFormat pdf --perGroup \
+--samplesLabel G1 MS_without_EdU G2 ES MS LS ES_control MS_control LS_control --heatmapHeight 35 --heatmapWidth 5
