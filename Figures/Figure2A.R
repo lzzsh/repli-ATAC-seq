@@ -1,5 +1,7 @@
-# annotate the genome
 library(tidyverse)
+library(ggplot2)
+
+# annotate the genome
 positions <- c(0,7,14,19,24,30,44,53,64,92,109,117,124,132,141)
 widths <- diff(positions)
 transposon <- read.fwf(file="~/Desktop/Rfiles/Rice_MSU7.fasta.std6.9.5.out" , widths=widths)
@@ -47,7 +49,6 @@ annotate <- rbind(transposon_class,TSS)
 # write.table(annotate,"~/Desktop/Rfiles/peak_unit/annotate.bed",row.names = F,quote=F,sep = "\t",col.names = F)
 
 # plot 
-library(tidyverse)
 annotate <- read.table("~/Desktop/Rfiles/peak_unit/annotate_RT.bed")
 annotate <- annotate %>%
   select(c(1,2,3,7)) %>%
@@ -97,6 +98,7 @@ RT_freq <- RT_freq %>%
                                  RT == "ML" ~ percent * total_number /number_peaks_MLS,
                                  RT == "L" ~ percent * total_number /number_peaks_LS))
 
+# plot
 modify_Figure <- RT_freq %>%
   ggplot(aes(x = feature, y = percent.fix, fill = RT))+
   geom_bar( stat = "identity",colour = "black",position = "dodge")+
