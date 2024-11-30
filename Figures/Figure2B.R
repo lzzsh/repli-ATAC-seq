@@ -1,3 +1,4 @@
+# load histone_RT.bed file 
 library(dplyr)
 library(ggplot2)
 histone <- read.table("~/Desktop/R所需文件/peaks划分/modify_RT.bed")
@@ -10,6 +11,7 @@ histone <- histone %>%
   setNames(c("chr","start","end","Modify","RT")) %>%
   arrange(across(everything()))
 
+# normalization
 RT_freq <- peaks_reads %>% group_by(RT)%>%
   summarise(Sum = sum(end) - sum(start))%>%
   filter(!(RT %in% c("EL","EML")))%>%
@@ -28,12 +30,12 @@ modify_plot$RT = factor(modify_plot$RT,levels = c("E", "EM", "M","ML","L"))
 modify_plot$Modify = factor(modify_plot$Modify,levels = c("H3K27ac","H3K4me1","H3K4me3",
                                                           "H3K27me3","H3K9me2"))
 
+# plot
 modify_Figure<- modify_plot %>%
   ggplot(aes(x = Modify, y = percent.fix, fill = RT))+
   geom_bar( stat = "identity",colour = "black",position = "dodge")+
   scale_fill_manual(values=c(E = "#2250F1", EM = "#28C5CC", M = "#1A8A12" , ML = "#FFFD33", L = "#FB0018", EL = "#FFEDA0", EML = "#FAB427"))+
   theme_classic() +ggtitle("Replication Times for Chromatin-Related Features")+theme(plot.title = element_text(hjust = 0.5))+
   xlab("Histone mark signature")+ylab("% of RT class with mark signature")
-
 modify_Figure                                  
 # ggsave("modify_Figure_NIP.png", modify_Figure , width = 8, height = 5, dpi = 300)
