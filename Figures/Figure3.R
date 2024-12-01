@@ -13,7 +13,7 @@ peak=GenomicRanges::GRangesList(ES=readPeakFile(files[4]),MS=readPeakFile(files[
 covplot(peak, weightCol="V5",chrs=c("chr1","chr2","chr3","chr4","chr5","chr6","chr7","chr8","chr9","chr10","chr11","chr12"))+ 
   facet_grid(chr ~ .id)
 
-ricegff<-makeTxDbFromGFF("F:/毕设/Arabidopsis/all_DIY.gff3")
+ricegff<-makeTxDbFromGFF("~/Desktop/Rfiles/all_DIY.gff3")
 peakAnno1 <- annotatePeak(files[[4]], 
                          tssRegion=c(-3000, 3000),
                          TxDb=ricegff, annoDb=ricegff)
