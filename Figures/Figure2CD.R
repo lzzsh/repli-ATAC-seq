@@ -4,21 +4,17 @@ library(ggplot2)
 
 gtf_data = import('~/Desktop/Rfiles/all_DIY.gff3')
 gtf_data = as.data.frame(gtf_data)
-gene_data <- gtf_data[which(!is.na(gtf_data[,11]) & gtf_data[,7]=="gene"),c(1,2,3,11)]
+gene_data <- gtf_data[which(!is.na(gtf_data[,11]) & gtf_data[,7]=="gene"),c(1,2,3,5,11)]
+colnames(gene_data) <- c("chrom","start","end","strand","Geneid")
+gene_data$end <- gene_data$start;gene_data$start <- gene_data$end - 1
+# write.table(gene_data,"~/Desktop/Rfiles/gene_data.txt",row.names = F,quote=F,sep = "\t",col.names = F)
 
-TSS_RT <- read.table("~/Desktop/Rfiles/peak_unit/TSS_peaks_unit") %>%
-  select(c(1,2,3,7,8)) %>%
-  setNames(c("chrom","Start","End","RT","Length"))
+TSS_RT <- read.table("~/Desktop/Rfiles/idr_peaks/TSS_RT.bed") %>%
+  select(c(1,2,3,6,7)) %>%
+  setNames(c("chrom","start","end","strand","RT"))
 
-genetxt <- read.table("~/Desktop/Rfiles/gene_rpkm.txt")
-genetxt <- unique(genetxt[,c(2,3,4,5,1)]) %>%
-  setNames(c("chrom","Start","End","strand","Geneid"))
-
-gene_rpkm <- merge(TSS_RT,genetxt,by=c("chrom","Start","End"), all.x=TRUE)
-gene_rpkm$strand[is.na(gene_rpkm$strand)]<- "-"
-gene_rpkm[which(gene_rpkm$strand == "-"), c(2,3)] = gene_rpkm[which(gene_rpkm$strand == "-"), c(2,3)] + 1
-gene_rpkm <- merge(gene_rpkm[,1:5],genetxt,by=c("chrom","Start","End")) %>%
-  select(c(7,1,2,3,6,4,5)) %>%
+gene_rpkm <- merge(TSS_RT,gene_data,by=c("chrom","start","end","strand"), all.x=TRUE)
+gene_rpkm <- gene_rpkm %>%
   arrange(across(everything()))
 
 rpkm <- read.table("~/Desktop/Rfiles/peak_unit/NIP_rep1_rep2_FPKM.featureCounts.matrix", header = T, skip = 185)
@@ -26,31 +22,26 @@ colnames(rpkm) <- c("Geneid","NIP_rep1","FPKM","NIP_rep2","FPKM.1")
 rpkm <- rpkm[,c(1,3,5)]
 rpkm$FPKM_average <- (rpkm$FPKM + rpkm$FPKM.1) / 2
 
-gene_rpkm<-gene_rpkm[order(gene_rpkm$Length,decreasing = T),]
-gene_rpkm[,8]<-as.numeric(rownames(gene_rpkm))
-gene_rpkm<-distinct(gene_rpkm,Geneid, .keep_all= TRUE)
-gene_rpkm<-gene_rpkm[order(gene_rpkm[,8]),]  # Take RT classification with large coincidence length
-
 gene_rpkm<-merge(gene_rpkm[,-8],rpkm,by="Geneid")
-gene_rpkm[,11]=0
+gene_rpkm[,10]=0
 for ( i in 1:nrow(gene_rpkm) )
      {
-       if(gene_rpkm[i,10]==0)
-       {gene_rpkm[i,11]="F=0"}
-       if(gene_rpkm[i,10]>0 & gene_rpkm[i,10]<=1)
-       {gene_rpkm[i,11]="0<F<=1"}
-       if(gene_rpkm[i,10]>1 & gene_rpkm[i,10]<=10)
-       {gene_rpkm[i,11]="1<F<=10"}
-       if(gene_rpkm[i,10]>10 & gene_rpkm[i,10]<=100)
-       {gene_rpkm[i,11]="10<F<=100"}
-       if(gene_rpkm[i,10]>100)
-       {gene_rpkm[i,11]="F>100"}
+       if(gene_rpkm[i,9]==0)
+       {gene_rpkm[i,10]="F=0"}
+       if(gene_rpkm[i,9]>0 & gene_rpkm[i,9]<=1)
+       {gene_rpkm[i,10]="0<F<=1"}
+       if(gene_rpkm[i,9]>1 & gene_rpkm[i,9]<=10)
+       {gene_rpkm[i,10]="1<F<=10"}
+       if(gene_rpkm[i,9]>10 & gene_rpkm[i,9]<=100)
+       {gene_rpkm[i,10]="10<F<=100"}
+       if(gene_rpkm[i,9]>100)
+       {gene_rpkm[i,10]="F>100"}
 
 }
 
 gene_rpkm<-gene_rpkm[which(gene_rpkm$RT %in% c("E","EM","M","ML","L")),]
 
-rpkm_table<-as.data.frame(table(gene_rpkm[,11],gene_rpkm[,6]))
+rpkm_table<-as.data.frame(table(gene_rpkm[,10],gene_rpkm[,6]))
 colnames(rpkm_table)<-c("RPKM","RT","FREQ")
 rpkm_table1<-rpkm_table %>% group_by(RPKM)%>%
   summarise(Sum = sum(FREQ))
@@ -63,6 +54,7 @@ RPKM_plot$RPKM = factor(RPKM_plot$RPKM,levels = c("F=0","0<F<=1","1<F<=10",
 
 # normalization
 peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads.txt", header = T)
+
 RT_freq <- peaks_reads %>% group_by(RT)%>%
   summarise(Sum = sum(end) - sum(start))%>%
   filter(!(RT %in% c("EL","EML")))%>%
@@ -71,7 +63,7 @@ RT_freq <- peaks_reads %>% group_by(RT)%>%
 modify_plot <- merge(RPKM_plot,RT_freq,by="RT")
 modify_plot$Ratio <- modify_plot$Ratio/modify_plot$percent/100
 
-# FPKM classfication map
+#####FPKM分类图
 RPKM_Figure<- modify_plot %>%
   ggplot(aes(x = RPKM, y = Ratio, fill = RT))+
   geom_bar( stat = "identity",colour = "black",position = "dodge")+
@@ -81,7 +73,7 @@ RPKM_Figure<- modify_plot %>%
 RPKM_Figure
 # ggsave("~/Desktop/photo/gene_expression_NIP.png", RPKM_Figure , width = 8, height = 5, dpi = 300)
 
-# FPKM boxplot
+#####FPKM箱线图
 gene_nonzero <- gene_rpkm %>%
   filter(FPKM_average > 0)
 gene_nonzero$RT = factor(gene_nonzero$RT,levels = c("E", "EM", "M","ML","L"))
