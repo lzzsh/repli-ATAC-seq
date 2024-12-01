@@ -2,6 +2,7 @@ library(dplyr)
 library(ggplot2)
 
 # load histone_RT.bed file 
+peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads.txt", header = T)
 histone <- read.table("~/Desktop/Rfiles/peak_unit/modify_RT.bed")
 colnames(histone)[1:3]<- c("chr","start","end")
 
