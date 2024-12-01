@@ -62,6 +62,12 @@ RPKM_plot$RPKM = factor(RPKM_plot$RPKM,levels = c("F=0","0<F<=1","1<F<=10",
                                                             "10<F<=100","F>100"))
 
 # normalization
+peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads.txt", header = T)
+RT_freq <- peaks_reads %>% group_by(RT)%>%
+  summarise(Sum = sum(end) - sum(start))%>%
+  filter(!(RT %in% c("EL","EML")))%>%
+  mutate(percent = Sum/sum(Sum), RT = factor(RT,levels = c("E", "EM", "M","ML","L")))
+
 modify_plot <- merge(RPKM_plot,RT_freq,by="RT")
 modify_plot$Ratio <- modify_plot$Ratio/modify_plot$percent/100
 
