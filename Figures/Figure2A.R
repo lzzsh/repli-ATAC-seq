@@ -67,8 +67,6 @@ feature_RT <- feature_RT %>%
                              feature == "Class II elements" ~ "Class II elements",
                              feature == "unannotate" ~ "Unannotate")) 
 
-
-
 # peaks_reads or peaks_reads_ZH11
 peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads.txt", header = T)
 feature_RT <- feature_RT %>%
