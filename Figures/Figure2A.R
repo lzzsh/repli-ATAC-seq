@@ -93,6 +93,7 @@ RT_freq<- feature_RT_freq %>% group_by(feature)%>%
 
 RT_freq$RT = factor(RT_freq$RT,levels = c("E","EM","M","ML","L"))
 RT_freq <- RT_freq %>%
+  filter(!is.na(RT)) %>%
   mutate(percent.fix = case_when(RT == "E" ~ percent * total_number /number_peaks_ES,
                                  RT == "EM" ~ percent * total_number /number_peaks_EMS,
                                  RT == "M" ~ percent * total_number /number_peaks_MS,
