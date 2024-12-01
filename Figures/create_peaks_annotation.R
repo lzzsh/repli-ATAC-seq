@@ -1,26 +1,27 @@
 # normalization the reads of each RT
-peaks_reads<-read.table("~/Desktop/Rfiles/idrpeaks_depth_rbq.txt")
-peaks_reads[,4]<-peaks_reads[,4]/22706283*1000000
-peaks_reads[,5]<-peaks_reads[,5]/6987114*1000000
-peaks_reads[,6]<-peaks_reads[,6]/26255468*1000000
-peaks_reads[,7]<-peaks_reads[,7]/20195449*1000000
-colnames(peaks_reads)<-c("chr","start","end","G1","ES","MS","LS")
-#peaks_reads<-peaks_reads[which( !(peaks_reads[,4]>peaks_reads[,5] & peaks_reads[,4]>peaks_reads[,6] & peaks_reads[,4]>peaks_reads[,7])),]
-peaks_reads[,8]<-apply(peaks_reads[,5:7],1,max)
-peaks_reads[,9:11]<-0
+peaks_reads<-read.table("~/Desktop/Rfiles/idr_peaks/EdU-idr_reads_ZH11.txt")
+colnames(peaks_reads)<-c("chr","start","end","ES","MS","LS")
+peaks_reads$ES<-peaks_reads$ES/2482331*1000000
+peaks_reads$MS<-peaks_reads$MS/42792694*1000000
+peaks_reads$LS<-peaks_reads$LS/15965054*1000000
+
+#peaks_reads<-peaks_reads[which( !(peaks_reads[,4]>peaks_reads$ES & peaks_reads[,4]>peaks_reads$MS & peaks_reads[,4]>peaks_reads$LS)),]
+peaks_reads$max<-apply(peaks_reads[,4:6],1,max)
+peaks_reads[,8:10]<-0
 peaks_reads$RT<-0
 for(i in 1:nrow(peaks_reads))
 {
-  if(peaks_reads[i,5] > 0.9*peaks_reads[i,8])
-  {peaks_reads[i,9]="E"}
-  if(peaks_reads[i,6] > 0.9*peaks_reads[i,8])
-  {peaks_reads[i,10]="M"}
-  if(peaks_reads[i,7] > 0.9*peaks_reads[i,8])
-  {peaks_reads[i,11]="L"}
-  peaks_reads[i,12]<-gsub("0","",paste(peaks_reads[i,9],peaks_reads[i,10],peaks_reads[i,11],sep = ""))
+  if(peaks_reads[i,4] > 0.9*peaks_reads[i,7])
+  {peaks_reads[i,8]="E"}
+  if(peaks_reads[i,5] > 0.9*peaks_reads[i,7])
+  {peaks_reads[i,9]="M"}
+  if(peaks_reads[i,6] > 0.9*peaks_reads[i,7])
+  {peaks_reads[i,10]="L"}
+  peaks_reads[i,11]<-gsub("0","",paste(peaks_reads[i,8],peaks_reads[i,9],peaks_reads[i,10],sep = ""))
 }
-peaks_RT<-peaks_reads[,c(1,2,3,12)]
-peaks_RT[,5]<-0
+
+peaks_RT<-peaks_reads[,c(1,2,3,11)]
+peaks_RT$ES<-0
 for(i in 1:nrow(peaks_RT))
 {
   if(peaks_RT[i,2]==0)
@@ -46,7 +47,8 @@ peaks_RT[,8]<-"."
 peaks_RT[,9]<-"."
 peaks_RT[,10]<-"peaks"
 peaks_RT<-peaks_RT[,c(1,6,10,2,3,7,8,9,5)]
-# write.table(peaks_RT,"~/Desktop/rbq_gff.gff3",row.names = F,quote=F,sep = "\t",col.names = F)
+# write.table(peaks_reads,"~/Desktop/Rfiles/idr_peaks/peaks_reads.txt",row.names = F,quote=F,sep = "\t",col.names = T)
+# write.table(peaks_RT,"~/Desktop/Rfiles/idr_peaks/rbq_gff.gff3",row.names = F,quote=F,sep = "\t",col.names = F)
 
 
 
