@@ -18,7 +18,7 @@ formatC(transposon_rmspace[,1], flag = '0', width = 2)
 transposon_rmspace[,1] <- unlist(lapply(as.numeric(transposon_rmspace[,1]),function(x) formatC(x,flag = '0', width = 2)))
 transposon_rmspace[,1] <- paste("chr",transposon_rmspace[,1],sep = "")
 transposon_rmspace[,5] <- "transposon"
-write.table(transposon_rmspace,"~/Desktop/Rfiles/transposon_rmspace.bed",row.names = F,quote=F,sep = "\t",col.names = F)
+# write.table(transposon_rmspace,"~/Desktop/Rfiles/transposon_rmspace.bed",row.names = F,quote=F,sep = "\t",col.names = F)
 
 # merge tss location and transposon
 TSS <- read.table("~/Desktop/Rfiles/peak_unit/TSS_location.bed")
@@ -61,6 +61,7 @@ unannotate <- unannotate %>%
 
 feature_RT <- rbind(unannotate,annotate)
 feature_RT <- feature_RT %>%
+  filter(RT %in% c("E","EM","M","ML","L")) %>%
   arrange(across(everything())) %>%
   mutate(feature =case_when( feature == "gene" ~ "Gene",
                              feature == "Class I elements" ~ "Class I elements",
@@ -77,16 +78,15 @@ number_peaks_EMS <- length(which(peaks_reads$RT == "EM"))
 number_peaks_MS <- length(which(peaks_reads$RT == "M"))
 number_peaks_MLS <- length(which(peaks_reads$RT == "ML"))
 number_peaks_LS <- length(which(peaks_reads$RT == "L"))
-number_peaks_ELS <- length(which(peaks_reads$RT == "EL"))
-number_peaks_EMLS <- length(which(peaks_reads$RT == "EML"))
 
-total_number<- number_peaks_ES + number_peaks_EMS + number_peaks_MS + number_peaks_MLS +
-  number_peaks_LS + number_peaks_ELS + number_peaks_EMLS
+total_number <- number_peaks_ES + number_peaks_EMS + number_peaks_MS + number_peaks_MLS +
+  number_peaks_LS 
 
-feature_RT_freq<- as.data.frame(table(feature_RT$feature,feature_RT$RT))
+feature_RT_freq <- as.data.frame(table(feature_RT$feature,feature_RT$RT))
 colnames(feature_RT_freq)[1:2] <- c("feature","RT")
 
-RT_freq<- feature_RT_freq %>% group_by(feature)%>%
+# normalization
+RT_freq <- feature_RT_freq %>% group_by(feature)%>%
   summarise(percent = Freq/sum(Freq), RT = RT )
 
 RT_freq$RT = factor(RT_freq$RT,levels = c("E","EM","M","ML","L"))
@@ -99,7 +99,7 @@ RT_freq <- RT_freq %>%
                                  RT == "L" ~ percent * total_number /number_peaks_LS))
 
 # plot
-modify_Figure<- RT_freq %>%
+modify_Figure <- RT_freq %>%
   ggplot(aes(x = feature, y = percent.fix, fill = RT))+
   geom_bar( stat = "identity",colour = "black",position = "dodge")+
   scale_fill_manual(values=c(E = "#2250F1", EM = "#28C5CC", M = "#1A8A12" , ML = "#FFFD33", L = "#FB0018", EL = "#FFEDA0", EML = "#FAB427"))+
