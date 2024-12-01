@@ -63,7 +63,7 @@ RT_freq <- peaks_reads %>% group_by(RT)%>%
 modify_plot <- merge(RPKM_plot,RT_freq,by="RT")
 modify_plot$Ratio <- modify_plot$Ratio/modify_plot$percent/100
 
-#####FPKM分类图
+# FPKM classfication chart
 RPKM_Figure<- modify_plot %>%
   ggplot(aes(x = RPKM, y = Ratio, fill = RT))+
   geom_bar( stat = "identity",colour = "black",position = "dodge")+
@@ -73,7 +73,7 @@ RPKM_Figure<- modify_plot %>%
 RPKM_Figure
 # ggsave("~/Desktop/photo/gene_expression_NIP.png", RPKM_Figure , width = 8, height = 5, dpi = 300)
 
-#####FPKM箱线图
+# FPKM boxplot
 gene_nonzero <- gene_rpkm %>%
   filter(FPKM_average > 0)
 gene_nonzero$RT = factor(gene_nonzero$RT,levels = c("E", "EM", "M","ML","L"))
