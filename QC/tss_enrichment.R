@@ -18,9 +18,9 @@ data.gr <- makeGRangesFromDataFrame(data)
 dis <-distanceToNearest(data.gr,promoters.gr,ignore.strand=T)
 res <- data.frame(promoters.gr[subjectHits(dis)]@ranges@start,data[queryHits(dis),2],promoters.gr[subjectHits(dis)]@strand,stringsAsFactors=F)
 ids1 <- res[,3] == "+"
-dis1 <- res[ids1,2] - res[ids1,1] #正�[m~S: �[m~E�[m~H~G�[m~M�[m~B�[m~M置-TSS�[m~M置�[m~[
+dis1 <- res[ids1,2] - res[ids1,1] 
 ids2 <- res[,3] == "-"
-dis2 <- res[ids2,1] - res[ids2,2] #�[m~_�[m~S: TSS�[m~M置-�[m~E�[m~H~G�[m~M�[m~B�[m~M置�[m~[
+dis2 <- res[ids2,1] - res[ids2,2] 
 dis <- c(dis1,dis2)
 assign(sprintf('%s_tss',data_name),dis)
 save(list=sprintf('%s_tss',data_name),file=sprintf('./%s_tss.RData',data_name))
