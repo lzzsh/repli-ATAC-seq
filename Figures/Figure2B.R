@@ -3,7 +3,7 @@ library(ggplot2)
 
 # load histone_RT.bed file 
 peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads.txt", header = T)
-histone <- read.table("~/Desktop/Rfiles/peak_unit/modify_RT.bed")
+histone <- read.table("~/Desktop/Rfiles/peak_unit/Histone_RT.bed")
 colnames(histone)[1:3]<- c("chr","start","end")
 
 histone <- merge(histone,peaks_reads[,c("chr","start","end","RT")],by=c("chr","start","end")) 
