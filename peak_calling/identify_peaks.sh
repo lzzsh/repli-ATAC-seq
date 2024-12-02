@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # select the peaks with IDR < 0.05
 awk '{if($5 >= 540) print $0}' ES-idr > ES-idr_0.05
 awk '{if($5 >= 540) print $0}' MS-idr > MS-idr_0.05
