@@ -11,6 +11,7 @@ gff$RT <- lapply(gff$RT, function(x) unlist(strsplit(x,"="))[2])
 gff <- gff[ !(gff$chr %in% c("chrUn","chrSy")),] 
 gff$length <- gff$end-gff$start+1
 gff[,4] <- gsub("S","",gff[,4])
+
 RT_length <- gff %>% group_by(RT) %>%
   summarise(Sum = sum(length))
 RT_length$freq <- RT_length[,2]/sum(RT_length[,2])
