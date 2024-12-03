@@ -12,6 +12,7 @@
 cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/
 out="/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/idr_result"
 
+# ZH11-1 and ZH11-2
 idr --samples macs2/NIP_ES_out/NIP_ES_peaks_sort.narrowPeak \
 			  macs2/LZZ-1-d_out/LZZ-1-d_peaks_sort.narrowPeak --input-file-type narrowPeak --rank p.value --output-file ${out}/ES-idr --plot --log-output-file ${out}/ES.idr.log
 
@@ -20,3 +21,13 @@ idr --samples macs2/ZH11_1_MS_out/ZH11_1_MS_peaks_sort.narrowPeak \
 
 idr --samples macs2/ZH11_1_LS_out/ZH11_1_LS_peaks_sort.narrowPeak \
 			  macs2/LZZ-1-f_out/LZZ-1-f_peaks_sort.narrowPeak --input-file-type narrowPeak --rank p.value --output-file ${out}/LS-idr --plot --log-output-file ${out}/LS.idr.log
+
+# ZH11-1 and NIP
+idr --samples macs2/ZH11_1_ES_out/ZH11_1_ES_peaks_sort.narrowPeak \
+                          macs2/NIP_ES_out/NIP_ES_peaks_sort.narrowPeak --input-file-type narrowPeak --rank p.value --output-file ${out}/ES-idr --plot --log-output-file ${out}/ES.idr.log
+
+idr --samples macs2/ZH11_1_MS_out/ZH11_1_MS_peaks_sort.narrowPeak \
+                          macs2/NIP_MS_out/NIP_MS_peaks_sort.narrowPeak --input-file-type narrowPeak --rank p.value --output-file ${out}/MS-idr --plot --log-output-file ${out}/MS.idr.log
+
+idr --samples macs2/ZH11_1_LS_out/ZH11_1_LS_peaks_sort.narrowPeak \
+                          macs2/NIP_LS_out/NIP_LS_peaks_sort.narrowPeak --input-file-type narrowPeak --rank p.value --output-file ${out}/LS-idr --plot --log-output-file ${out}/LS.idr.log
