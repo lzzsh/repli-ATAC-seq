@@ -30,6 +30,3 @@ computeMatrix reference-point  -b 1000 -a 1000 -R ES_control_tss.txt EMS_control
 plotProfile -m matrix_peaks_control.gz  -out TSS_profile_control.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_control.bed --plotFileFormat pdf --perGroup
 plotHeatmap -m matrix_peaks_control.gz  -out TSS_heatmap_control.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_control.bed --plotFileFormat pdf --perGroup \
 --samplesLabel G1 MS_without_EdU G2 ES MS LS ES_control MS_control LS_control --heatmapHeight 35 --heatmapWidth 5 --colorMap OrRd
-
-plotHeatmap -m matrix_peaks.gz  -out TSS_heatmap.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location.bed --plotFileFormat pdf --perGroup \
---samplesLabel G1 MS_without_EdU G2 ES MS LS ES_control MS_control LS_control --heatmapHeight 35 --heatmapWidth 5 --colorMap OrRd
