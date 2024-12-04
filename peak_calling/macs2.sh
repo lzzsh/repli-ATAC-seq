@@ -9,11 +9,9 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=liaozizhuo@westlake.edu.cn
 
-cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata
-mkdir ../macs2
 threshold=0.1
-mkdir /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p${threshold}
-out="/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p${threshold}"
+mkdir -p /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_p${threshold}
+out="/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_p${threshold}"
 
 #ZH11-2
 macs2 callpeak -t /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-adjp_result/merged_bam/bams/LZZ-1-d_S99_sort_rmdup_rmor_q30.bam  -n LZZ-1-d \
