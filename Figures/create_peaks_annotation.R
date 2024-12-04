@@ -1,9 +1,9 @@
 # normalization the reads of each RT
 peaks_reads<-read.table("~/Desktop/Rfiles/idr_peaks/EdU-idr_reads_ZH11.txt")
 colnames(peaks_reads)<-c("chr","start","end","ES","MS","LS")
-peaks_reads$ES<-peaks_reads$ES/2482331*1000000
-peaks_reads$MS<-peaks_reads$MS/42792694*1000000
-peaks_reads$LS<-peaks_reads$LS/15965054*1000000
+peaks_reads$ES<-peaks_reads$ES/2482331*1000000 #3987051
+peaks_reads$MS<-peaks_reads$MS/42792694*1000000 #10164368
+peaks_reads$LS<-peaks_reads$LS/15965054*1000000 #10328346
 
 #peaks_reads<-peaks_reads[which( !(peaks_reads[,4]>peaks_reads$ES & peaks_reads[,4]>peaks_reads$MS & peaks_reads[,4]>peaks_reads$LS)),]
 peaks_reads$max<-apply(peaks_reads[,4:6],1,max)
