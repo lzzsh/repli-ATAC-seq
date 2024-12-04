@@ -9,10 +9,8 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=liaozizhuo@westlake.edu.cn
 
-cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata
-mkdir ../macs2
 threshold=0.1
-mkdir /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_p${threshold}
+mkdir -p /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_p${threshold}
 out="/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_p${threshold}"
 
 #ZH11-2
