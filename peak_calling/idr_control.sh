@@ -10,8 +10,9 @@
 #SBATCH --mail-user=liaozizhuo@westlake.edu.cn
 
 threshold=0.1
+type='p'
 mkdir /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/idr_result
-input="/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_p${threshold}"
+input="/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_${type}${threshold}"
 out="/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/idr_result"
 
 # ZH11-1 and ZH11-2
