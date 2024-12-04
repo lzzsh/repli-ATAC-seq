@@ -30,3 +30,13 @@ computeMatrix reference-point  -b 1000 -a 1000 -R ES_control_tss.txt EMS_control
 plotProfile -m matrix_peaks_control.gz  -out TSS_profile_control.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_control.bed --plotFileFormat pdf --perGroup
 plotHeatmap -m matrix_peaks_control.gz  -out TSS_heatmap_control.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_control.bed --plotFileFormat pdf --perGroup \
 --samplesLabel G1 MS_without_EdU G2 ES MS LS ES_control MS_control LS_control --heatmapHeight 35 --heatmapWidth 5 --colorMap OrRd
+
+# ZH11-2_peaks
+computeMatrix reference-point  -b 1000 -a 1000 -R ES_2_control_tss.txt EMS_2_control_tss.txt MS_2_control_tss.txt MLS_2_control_tss.txt LS_2_control_tss.txt -S \
+/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/bws/LZZ-1-d-sup.bw /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/bws/LZZ-1-e-sup.bw /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/bws/LZZ-1-f-sup.bw \
+/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-adjp_result/merged_bam/bams/bws/LZZ-1-d.bw /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/bws/LZZ-2-e.bw /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/bws/LZZ-1-f.bw \
+--skipZeros -o matrix_peaks_control_2.gz --outFileSortedRegions regions_peaks_control_2.bed
+
+plotProfile -m matrix_peaks_control_2.gz  -out TSS_profile_control_2.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_control_2.bed --plotFileFormat pdf --perGroup
+plotHeatmap -m matrix_peaks_control_2.gz  -out TSS_heatmap_control_2.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_control_2.bed --plotFileFormat pdf --perGroup \
+--samplesLabel G1 MS_without_EdU G2 ES MS LS --heatmapHeight 35 --heatmapWidth 5 --colorMap OrRd
