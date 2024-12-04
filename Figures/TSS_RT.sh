@@ -10,3 +10,8 @@ mv TSS_RT_temp.bed TSS_RT.bed
 bedtools intersect -a TSS.bed -b ZH11_RT_control.gff3 -wa -wb > TSS_RT_control.bed
 cut -f 1,2,3,4,5,6,10 TSS_RT_control.bed > TSS_RT_control_temp.bed
 mv TSS_RT_control_temp.bed TSS_RT_control.bed
+
+# ZH11-2_peaks
+bedtools intersect -a TSS.bed -b ZH11_2_RT_control.gff3 -wa -wb > TSS_RT_2_control.bed
+cut -f 1,2,3,4,5,6,10 TSS_RT_2_control.bed > TSS_RT_2_control_temp.bed
+mv TSS_RT_2_control_temp.bed TSS_RT_2_control.bed
