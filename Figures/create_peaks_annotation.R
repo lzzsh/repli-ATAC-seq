@@ -1,5 +1,5 @@
 # normalization the reads of each RT
-peaks_reads<-read.table("~/Desktop/Rfiles/idr_peaks/EdU-idr_reads_ZH11.txt")
+peaks_reads<-read.table("~/Desktop/Rfiles/idr_peaks/EdU-idr_reads_ZH11.txt", sep = "\t")
 colnames(peaks_reads)<-c("chr","start","end","ES","MS","LS")
 peaks_reads$ES<-peaks_reads$ES/2482331*1000000 #3987051
 peaks_reads$MS<-peaks_reads$MS/42792694*1000000 #10164368
