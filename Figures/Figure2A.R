@@ -9,8 +9,8 @@ transposon_rmspace <- as.data.frame(apply(transposon, 2, function(x) gsub(" ",""
 
 transposon_rmspace <- transposon_rmspace %>%
   set_names(transposon_rmspace[2,]) %>% 
-  select(c(5,6,7,10)) %>%
-  slice(-c(1,2,3)) %>%  
+  dplyr::select(c(5,6,7,10)) %>%
+  dplyr::slice(-c(1,2,3)) %>%  
   set_names(c("chr","start","end","family"))
 
 transposon_rmspace[,1] <- gsub("Chr","",transposon_rmspace[,1])
@@ -33,7 +33,7 @@ colnames(a)[1:3] <- c("chr","start","end")
 
 transposon_RT <- merge(a,transposon_rmspace,by=c("chr","start","end")) %>%
   arrange(chr,start,end) %>%
-  select(chr,start,end,V7,family) %>%
+  dplyr::select(chr,start,end,V7,family) %>%
   set_names(c("chr","start","end","RT","type"))
 
 class1 <- c("LTR/Copia","LTR/Gypsy","LTR/Solo","LTR/TRIM","LTR/unknown",
@@ -44,16 +44,16 @@ transposon_rmspace <- transposon_rmspace %>%
                         TRUE ~ "Class II elements"   ))
 
 transposon_class <- transposon_rmspace %>%
-  select(chr,start,end,type)
+  dplyr::select(chr,start,end,type)
 annotate <- rbind(transposon_class,TSS)
 # write.table(annotate,"~/Desktop/Rfiles/peak_unit/annotate.bed",row.names = F,quote=F,sep = "\t",col.names = F)
 
 # merge annotate and unannotate file
-annotate <- read.table("~/Desktop/Rfiles/peak_unit/annotate_RT.bed", sep = "\t")
+annotate <- read.table("~/Desktop/Rfiles/peak_unit/annotate_RT_2.bed", sep = "\t")
 annotate <- annotate %>%
   setNames(c("chr","start","end","RT","feature"))
 
-unannotate <- read.table("~/Desktop/Rfiles/peak_unit/unannotated_RT.bed")
+unannotate <- read.table("~/Desktop/Rfiles/peak_unit/unannotated_RT_2.bed")
 unannotate$feature <- "unannotate"
 unannotate <- unannotate %>%
   mutate(feature = "unannotate") %>%
@@ -69,7 +69,7 @@ feature_RT <- feature_RT %>%
                              feature == "unannotate" ~ "Unannotate")) 
 
 # peaks_reads or peaks_reads_ZH11
-peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads.txt", header = T)
+peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads_2_control.txt", header = T, sep = "\t")
 feature_RT <- feature_RT %>%
   arrange(across(everything()))
 
@@ -99,11 +99,11 @@ RT_freq <- RT_freq %>%
                                  RT == "L" ~ percent * total_number /number_peaks_LS))
 
 # plot
-modify_Figure <- RT_freq %>%
+Figure2A <- RT_freq %>%
   ggplot(aes(x = feature, y = percent.fix, fill = RT))+
   geom_bar( stat = "identity",colour = "black",position = "dodge")+
   scale_fill_manual(values=c(E = "#2250F1", EM = "#28C5CC", M = "#1A8A12" , ML = "#FFFD33", L = "#FB0018", EL = "#FFEDA0", EML = "#FAB427"))+
   theme_classic() +ggtitle("Replication Times for Chromatin-Related Features")+theme(plot.title = element_text(hjust = 0.5))+
   xlab("Feature")+ylab("Segment coverage")
-modify_Figure
-# ggsave("~/Desktop/photo//NIP_RT7.pdf", modify_Figure , width = 8, height = 5)      
+Figure2A
+# ggsave("~/Documents/Github/repli-ATAC-seq/output/Figures/Figure2A.pdf", Figure2A , width = 8, height = 5)      
