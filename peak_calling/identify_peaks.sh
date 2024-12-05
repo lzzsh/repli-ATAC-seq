@@ -44,7 +44,30 @@ cat /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_p0.01
 	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_p0.01/ZH11_2_MS_out/ZH11_2_MS_peaks_sort.narrowPeak > ZH11_0.1
 sort -k1,1 -k2,2n ZH11_0.1 > ZH11_0.1_sort
 bedtools merge -i ZH11_0.1_sort > ZH11_0.1_control_sort_merge
-multicov -bams /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-adjp_result/merged_bam/bams/LZZ-1-d_S99_sort_rmdup_rmor_q30.bam \
+bedtools multicov -bams /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-adjp_result/merged_bam/bams/LZZ-1-d_S99_sort_rmdup_rmor_q30.bam \
 	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/LZZ-2-e_S99_sort_rmdup_rmor_q30.bam \
 	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/LZZ-1-f_S99_sort_rmdup_rmor_q30.bam \
 	-bed ZH11_0.1_control_sort_merge > ZH11_reads_ZH11-2_control.txt
+
+# wox11
+cat /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/macs2/macs2_p0.01/xw11_CR_LS_out/xw11_CR_LS_peaks_sort.narrowPeak \
+	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/macs2/macs2_p0.01/xw11_CR_ES_out/xw11_CR_ES_peaks_sort.narrowPeak \
+	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/macs2/macs2_p0.01/xw11_CR_MS_out/xw11_CR_MS_peaks_sort.narrowPeak > xw11_CR_0.1
+sort -k1,1 -k2,2n xw11_CR_0.1 > xw11_CR_0.1_sort
+bedtools merge -i xw11_CR_0.1_sort > xw11_CR_0.1_sort_merge
+bedtools multicov -bams /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-2-g_result/bwa_all_rawdata/LZZ-2-g_S99_sort_rmdup_rmor_q30.bam \
+	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/LZZ-2-h_S99_sort_rmdup_rmor_q30.bam \
+	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/LZZ-2-i_S99_sort_rmdup_rmor_q30.bam \
+	-bed xw11_CR_0.1_sort_merge > xw11_CR_reads.txtx
+
+# x39
+cat /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/macs2/macs2_p0.01/x39_CR_LS_out/x39_CR_LS_peaks_sort.narrowPeak \
+	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/macs2/macs2_p0.01/x39_CR_ES_out/x39_CR_ES_peaks_sort.narrowPeak \
+	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/macs2/macs2_p0.01/x39_CR_MS_out/x39_CR_MS_peaks_sort.narrowPeak > x39_CR_0.1
+sort -k1,1 -k2,2n x39_CR_0.1 > x39_CR_0.1_sort
+bedtools merge -i x39_CR_0.1_sort > x39_CR_0.1_sort_merge
+bedtools multicov -bams /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-adjp_result/merged_bam/bams/LZZ-3-j_S99_sort_rmdup_rmor_q30.bam \
+	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/bwa_all_rawdata/LZZ-4-k_S99_sort_rmdup_rmor_q30.bam \
+	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/bwa_all_rawdata/LZZ-4-l_S99_sort_rmdup_rmor_q30.bam \
+	-bed x39_CR_0.1_sort_merge > x39_CR_reads.txt
+
