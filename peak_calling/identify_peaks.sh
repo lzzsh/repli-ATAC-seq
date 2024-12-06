@@ -58,7 +58,7 @@ bedtools merge -i xw11_CR_0.1_sort > xw11_CR_0.1_sort_merge
 bedtools multicov -bams /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-2-g_result/bwa_all_rawdata/LZZ-2-g_S99_sort_rmdup_rmor_q30.bam \
 	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/LZZ-2-h_S99_sort_rmdup_rmor_q30.bam \
 	/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/LZZ-2-i_S99_sort_rmdup_rmor_q30.bam \
-	-bed xw11_CR_0.1_sort_merge > xw11_CR_reads.txtx
+	-bed xw11_CR_0.1_sort_merge > xw11_CR_reads.txt
 
 # x39
 cat /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/macs2/macs2_p0.01/x39_CR_LS_out/x39_CR_LS_peaks_sort.narrowPeak \
