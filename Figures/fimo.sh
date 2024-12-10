@@ -11,4 +11,4 @@
 
 source /home/liuxiaodongLab/liaozizhuo/anaconda3/etc/profile.d/conda.sh
 conda activate py37
-fimo -oc meme JASPAR2024_CORE_plants_non-redundant_pfms_meme.txt /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/rice_all_genomes_v7.fasta 
+fimo --thresh 1e-3 -oc meme JASPAR2024_CORE_plants_non-redundant_pfms_meme.txt /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/rice_all_genomes_v7.fasta 
