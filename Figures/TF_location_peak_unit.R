@@ -94,4 +94,10 @@ a<-merge(a,msu_to_symbol,by = "MSU", all.x = TRUE)
 a <- a %>%
   dplyr::select(c(1,2,3,8,4,5,6,7,9)) %>%
   setNames(c("MSU","TAIR","SYMBOL_TAIR","TF_family_TAIR","E","EM","M","L","SYMBOL_NIP"))
+
+# add gene expression information
+rpkm <- read.table("~/Desktop/Rfiles/peak_unit/NIP_rep1_rep2_FPKM.featureCounts.matrix", skip = 186)
+rpkm <- rpkm[,c(1,3,5)]
+colnames(rpkm) <- c("MSU","FPKM.1","FPKM.2") 
+a <- merge(a,rpkm,by="MSU",all.x=TRUE)
 # write.table(a,"~/Desktop/Rfiles/peak_unit/tf_location_NIP_4RT_all.csv",quote=F,sep = ",",row.names = F)
