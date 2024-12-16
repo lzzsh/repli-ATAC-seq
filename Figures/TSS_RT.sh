@@ -15,3 +15,19 @@ mv TSS_RT_control_temp.bed TSS_RT_control.bed
 bedtools intersect -a TSS.bed -b ZH11_2_RT_control.gff3 -wa -wb > TSS_RT_2_control.bed
 cut -f 1,2,3,4,5,6,10 TSS_RT_2_control.bed > TSS_RT_2_control_temp.bed
 mv TSS_RT_2_control_temp.bed TSS_RT_2_control.bed
+
+# x39 cuttag
+bedtools intersect -a TSS_RT_2_control.bed -b x39_cut_peaks_sort.narrowPeak -wa -wb > x39_RT.bed
+cut -f 1,2,3,4,5,6,7 x39_RT.bed > x39_temp.bed
+mv x39_temp.bed x39_RT.bed
+
+# x49 cuttag
+bedtools intersect -a TSS_RT_2_control.bed -b x49_cut_peaks_sort.narrowPeak -wa -wb > x49_RT.bed
+cut -f 1,2,3,4,5,6,7 x49_RT.bed > x49_temp.bed
+mv x49_temp.bed x49_RT.bed
+
+# xw11 cuttag
+bedtools intersect -a TSS_RT_2_control.bed -b xw11_cut_peaks_sort.narrowPeak -wa -wb > xw11_RT.bed
+cut -f 1,2,3,4,5,6,7 xw11_RT.bed > xw11_temp.bed
+mv xw11_temp.bed xw11_RT.bed
+
