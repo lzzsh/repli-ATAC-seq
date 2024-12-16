@@ -11,4 +11,4 @@ bedtools slop -i xw11_summits_top1000.bed -g genome.chrom.sizes -b 150 > xw11_su
 mv xw11_summits_top1000_temp.bed xw11_summits_top1000.bed
 
 # homer
-findMotifsGenome.pl xw11_summits_top1000.bed rice ./output/
+findMotifsGenome.pl xw11_summits_top1000.bed rice ./output/ -size 200 -mask -preparse
