@@ -1,5 +1,7 @@
 # preparation
-loadGenome.pl -name rice -fasta ./rice_all_genomes_v7.fasta -gtf ./all_DIY.gff3 -org "Oryza sativa" -version custom -force
+gffread -T all_DIY.gff3 -o all_DIY.gtf
+loadGenome.pl -name rice -fasta /storage/liuxiaodongLab/liaozizhuo/Projects/cuttag/macs2/macs2_p1e-5/homer/rice_all_genomes_v7.fasta \
+-gtf /storage/liuxiaodongLab/liaozizhuo/Projects/cuttag/macs2/macs2_p1e-5/homer/all_DIY.gtf -org "Oryza sativa" -version custom -force
 
 samtools faidx rice_all_genomes_v7.fasta
 cut -f1,2 rice_all_genomes_v7.fasta.fai > genome.chrom.sizes
