@@ -31,3 +31,19 @@ bedtools intersect -a TSS_RT_2_control.bed -b xw11_cut_peaks_sort.narrowPeak -wa
 cut -f 1,2,3,4,5,6,7 xw11_RT.bed > xw11_temp.bed
 mv xw11_temp.bed xw11_RT.bed
 
+# top3000
+
+# x39 cuttag
+bedtools intersect -a /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/TSS_RT_2_control.bed -b ../x39_cut_out/x39_cut_peaks_top3000.narrowPeak -wa -wb > ../x39_cut_out/x39_RT_3000.bed
+cut -f 1,2,3,4,5,6,7 ../x39_cut_out/x39_RT_3000.bed > ../x39_cut_out/x39_temp.bed
+mv ../x39_cut_out/x39_temp.bed ../x39_cut_out/x39_RT_3000.bed
+
+# x49 cuttag
+bedtools intersect -a /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/TSS_RT_2_control.bed -b ../x49_cut_out/x49_cut_peaks_top3000.narrowPeak -wa -wb > ../x49_cut_out/x49_RT_3000.bed
+cut -f 1,2,3,4,5,6,7 ../x49_cut_out/x49_RT_3000.bed > ../x49_cut_out/x49_temp.bed
+mv ../x49_cut_out/x49_temp.bed ../x49_cut_out/x49_RT_3000.bed
+
+# xw11 cuttag
+bedtools intersect -a /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/TSS_RT_2_control.bed -b ../xw11_cut_out/xw11_cut_peaks_top3000.narrowPeak -wa -wb > ../xw11_cut_out/xw11_RT_3000.bed
+cut -f 1,2,3,4,5,6,7 ../xw11_cut_out/xw11_RT_3000.bed > ../xw11_cut_out/xw11_temp.bed
+mv ../xw11_cut_out/xw11_temp.bed ../xw11_cut_out/xw11_RT_3000.bed
