@@ -1,3 +1,7 @@
+library(MASS)
+library(moments)
+library(ggplot2)
+
 # normalization the reads of each RT
 peaks_reads<-read.table("~/Desktop/Rfiles/idr_peaks/EdU-idr_reads_ZH11.txt", sep = "\t")
 colnames(peaks_reads)<-c("chr","start","end","ES","MS","LS")
@@ -9,6 +13,66 @@ peaks_reads$LS<-peaks_reads$LS/15965054*1000000 #10328346
 peaks_reads$max<-apply(peaks_reads[,4:6],1,max)
 peaks_reads[,8:10]<-0
 peaks_reads$RT<-0
+
+# normalization and then remove outliers
+if (min(peaks_reads$max, na.rm = TRUE) <= 0) {
+  adjustment <- 1 - min(peaks_reads$max, na.rm = TRUE)
+  peaks_reads$max_adjusted <- peaks_reads$max + adjustment
+} else {
+  peaks_reads$max_adjusted <- peaks_reads$max
+}
+
+# Perform Box-Cox transformation
+bc_lambda <- boxcox(peaks_reads$max_adjusted ~ 1, data = peaks_reads, lambda = seq(-2, 2, len = 50))
+lambda_opt <- bc_lambda$x[which.max(bc_lambda$y)]
+
+# Apply the optimal λ value for transformation
+data_bc <- if (lambda_opt == 0) {
+  log(peaks_reads$max_adjusted)
+} else {
+  ((peaks_reads$max_adjusted^lambda_opt - 1) / lambda_opt)
+}
+
+# Calculate skewness and output the result
+skew_bc <- skewness(data_bc)
+cat("Skewness after Box-Cox Transformation:", skew_bc, "\n")
+
+# Calculate mean and standard deviation
+mean_value <- mean(data_bc, na.rm = TRUE)
+std_dev <- sd(data_bc, na.rm = TRUE)
+
+# Define the bounds for outliers
+lower_bound <- mean_value - 2 * std_dev
+upper_bound <- mean_value + 2 * std_dev
+
+# Add a column to label outliers and normal values
+peaks_reads$is_outlier <- ifelse(
+  data_bc < lower_bound | data_bc > upper_bound,
+  "Outlier",
+  "Normal"
+)
+
+# Count the number of outliers and normals
+outliers_count <- sum(peaks_reads$is_outlier == "Outlier", na.rm = TRUE)
+normals_count <- sum(peaks_reads$is_outlier == "Normal", na.rm = TRUE)
+
+cat("Number of outliers:", outliers_count, "\n")
+cat("Number of normals:", normals_count, "\n")
+
+# Plot the density plot of original data with outlier detection
+ggplot(data.frame(x = peaks_reads$max_adjusted, is_outlier = peaks_reads$is_outlier), aes(x = x, fill = is_outlier)) +
+  geom_density(alpha = 0.6) +
+  theme_minimal() +
+  labs(title = "Density Plot of Data with Outlier Detection", x = "Value", y = "Density") +
+  scale_fill_manual(values = c("Outlier" = "#FF9999", "Normal" = "#99CCFF"))
+
+# Plot the density plot of data after Box-Cox transformation with outlier detection
+ggplot(data.frame(x = data_bc, is_outlier = peaks_reads$is_outlier), aes(x = x, fill = is_outlier)) +
+  geom_density(alpha = 0.6) +
+  theme_minimal() +
+  labs(title = "Density Plot after Box-Cox Transformation with Outlier Detection", x = "Transformed Value", y = "Density") +
+  scale_fill_manual(values = c("Outlier" = "#FF9999", "Normal" = "#99CCFF"))
+
 for(i in 1:nrow(peaks_reads))
 {
   if(peaks_reads[i,4] > 0.9*peaks_reads[i,7])
