@@ -9,5 +9,9 @@ bedtools intersect -a ZH11_2_RT_control.gff3 -b ../xw11_cut_out/xw11_cut_peaks_t
 
 # 
 bedtools intersect -a ZH11_2_RT_control.gff3 -b ../x39_cut_out/x39_cut_peaks_top1000.narrowPeak -wa -wb > ../x39_cut_out/x39_RT_top1000.bed
-bedtools intersect -a ZH11_2_RT_control.gff3 -b ../x49_cut_out/x49_cut_peaks_top1000.narrowPeak -wa -wb > ../x49_cut_out/x39_RT_top1000.bed
-bedtools intersect -a ZH11_2_RT_control.gff3 -b ../xw11_cut_out/xw11_cut_peaks_top1000.narrowPeak -wa -wb > ../xw11_cut_out/x39_RT_top1000.bed
+bedtools intersect -a ZH11_2_RT_control.gff3 -b ../x49_cut_out/x49_cut_peaks_top1000.narrowPeak -wa -wb > ../x49_cut_out/x49_RT_top1000.bed
+bedtools intersect -a ZH11_2_RT_control.gff3 -b ../xw11_cut_out/xw11_cut_peaks_top1000.narrowPeak -wa -wb > ../xw11_cut_out/xw11_RT_top1000.bed
+
+bedtools intersect -a ZH11_2_RT_control.gff3 -b ../x39_cut_out/x39_cut_peaks.narrowPeak -wa -wb > ../x39_cut_out/x39_RT.bed
+bedtools intersect -a ZH11_2_RT_control.gff3 -b ../x49_cut_out/x49_cut_peaks.narrowPeak -wa -wb > ../x49_cut_out/x49_RT.bed
+bedtools intersect -a ZH11_2_RT_control.gff3 -b ../xw11_cut_out/xw11_cut_peaks.narrowPeak -wa -wb > ../xw11_cut_out/xw11_RT.bed
