@@ -10,11 +10,11 @@
 #SBATCH --mail-user=liaozizhuo@westlake.edu.cn
 
 threshold=0.01
-type='q'
+type='p'
 mkdir -p /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_${type}${threshold}
 out="/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_${type}${threshold}"
 
-#ZH11-control
+#ZH11-control-1
 macs2 callpeak -t /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_control/bwa_all_rawdata/LZZ-8-1_S99_sort_rmdup_rmor_q30.bam  -n ZH11_3_ES \
         --shift 100 --extsize 200 --nomodel -B --SPMR -g 3.0E8 -${type} ${threshold} --outdir ${out}/ZH11_3_ES_out
 
@@ -30,7 +30,28 @@ macs2 callpeak -t /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_con
 
 sort -k8,8nr ${out}/ZH11_3_LS_out/ZH11_3_LS_peaks.narrowPeak > ${out}/ZH11_3_LS_out/ZH11_3_LS_peaks_sort.narrowPeak
 
+#ZH11-control-2
+macs2 callpeak -t /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_control/bwa_all_rawdata/LZZ-9-1_S99_sort_rmdup_rmor_q30.bam  -n ZH11_4_ES \
+        --shift 100 --extsize 200 --nomodel -B --SPMR -g 3.0E8 -${type} ${threshold} --outdir ${out}/ZH11_4_ES_out
+
+sort -k8,8nr ${out}/ZH11_4_ES_out/ZH11_4_ES_peaks.narrowPeak > ${out}/ZH11_4_ES_out/ZH11_4_ES_peaks_sort.narrowPeak
+
+macs2 callpeak -t /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_control/bwa_all_rawdata/LZZ-9-2_S99_sort_rmdup_rmor_q30.bam  -n ZH11_4_MS \
+        --shift 100 --extsize 200 --nomodel -B --SPMR -g 3.0E8 -${type} ${threshold} --outdir ${out}/ZH11_4_MS_out
+
+sort -k8,8nr ${out}/ZH11_4_MS_out/ZH11_4_MS_peaks.narrowPeak > ${out}/ZH11_4_MS_out/ZH11_4_MS_peaks_sort.narrowPeak
+
+macs2 callpeak -t /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_control/bwa_all_rawdata/LZZ-9-3_S99_sort_rmdup_rmor_q30.bam -n ZH11_4_LS \
+        --shift 100 --extsize 200 --nomodel -B --SPMR -g 3.0E8 -${type} ${threshold} --outdir ${out}/ZH11_4_LS_out
+
+sort -k8,8nr ${out}/ZH11_4_LS_out/ZH11_4_LS_peaks.narrowPeak > ${out}/ZH11_4_LS_out/ZH11_4_LS_peaks_sort.narrowPeak
+
 #ZH11-2
+macs2 callpeak -t /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/LZZ-1-d-sup_S99_sort_rmdup_rmor_q30.bam  -n ZH11_2_G1 \
+        --shift 100 --extsize 200 --nomodel -B --SPMR -g 3.0E8 -${type} ${threshold} --outdir ${out}/ZH11_2_G1_out
+
+sort -k8,8nr ${out}/ZH11_2_G1_out/ZH11_2_G1_peaks.narrowPeak > ${out}/ZH11_2_G1_out/ZH11_2_G1_peaks_sort.narrowPeak
+
 macs2 callpeak -t /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-adjp_result/merged_bam/bams/LZZ-1-d_S99_sort_rmdup_rmor_q30.bam  -n ZH11_2_ES \
         --shift 100 --extsize 200 --nomodel -B --SPMR -g 3.0E8 -${type} ${threshold} --outdir ${out}/ZH11_2_ES_out 
 
