@@ -49,3 +49,7 @@ bedtools multicov -bams  ${ZH11_3_location}/LZZ-8-3_S99_sort_rmdup_rmor_q30.bam 
 bedtools multicov -bams  ${ZH11_4_location}/LZZ-9-1_S99_sort_rmdup_rmor_q30.bam -bed ${macs}/ZH11_4_ES_out/ZH11_4_ES_peaks_sort.narrowPeak > ZH11_4_ES.txt
 bedtools multicov -bams  ${ZH11_4_location}/LZZ-9-1_S99_sort_rmdup_rmor_q30.bam -bed ${macs}/ZH11_4_MS_out/ZH11_4_MS_peaks_sort.narrowPeak > ZH11_4_MS.txt
 bedtools multicov -bams  ${ZH11_4_location}/LZZ-9-1_S99_sort_rmdup_rmor_q30.bam -bed ${macs}/ZH11_4_LS_out/ZH11_4_LS_peaks_sort.narrowPeak > ZH11_4_LS.txt
+
+# sort and merge peaks
+awk '{print $1"\t"$2"\t"$3}' *.txt > all_peaks.txt
+sort -k1,1 -k2,2n all_peaks.txt | bedtools merge -i - > merged_peaks.bed

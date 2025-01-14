@@ -1,7 +1,3 @@
-# sort and merge peaks
-awk '{print $1"\t"$2"\t"$3}' *.txt > all_peaks.txt
-sort -k1,1 -k2,2n all_peaks.txt | bedtools merge -i - > merged_peaks.bed
-
 # select reads only from open chromatin region
 files=(
 	"/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_control/bwa_all_rawdata/LZZ-9-1_S99_sort_rmdup_rmor_q30.bam"
