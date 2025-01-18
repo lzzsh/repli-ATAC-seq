@@ -1,12 +1,12 @@
 # Set working directory
-setwd("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/peaks_quan/")
+setwd("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/results/")
 
 # Load necessary libraries
 library(ggplot2)
 library(dplyr)
 
 # Load data
-count <- read.table("./peaks_quan.txt")
+count <- read.table("./peaks_re_quan.txt")
 
 # Add column names
 colnames(count) <- c("chr", "start", "end",
@@ -15,6 +15,12 @@ colnames(count) <- c("chr", "start", "end",
                      "ZH11-2-G1", "ZH11-2-ES", "ZH11-2-MS", "ZH11-2-LS",
                      "ZH11-1-ES", "ZH11-1-MS", "ZH11-1-LS",
                      "NIP-1-ES", "NIP-1-MS", "NIP-1-LS")
+
+# Directory to save the results
+output_dir <- "."
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir)
+}
 
 # Function to normalize columns 4 to 19 using TPM
 normalize_tpm <- function(data) {
@@ -38,9 +44,27 @@ normalize_tpm <- function(data) {
 # Apply normalization
 normalized_count <- normalize_tpm(count)
 
+# Prepare data for plotting
+all_data <- do.call(rbind, lapply(4:19, function(i) {
+  data.frame(value = log(normalized_count[, i] + 1), sample = colnames(normalized_count)[i])
+}))
+
 # Save normalized data to a new file
-output_file <- "./results/peaks_quan_tpm_normalized.txt"
-write.table(normalized_count[,4:19], file = output_file, sep = "\t", quote = FALSE, row.names = FALSE)
+output_file <- "./peaks_re_quan_tpm_normalized.txt"
+write.table(normalized_count[,1:19], file = output_file, sep = "\t", quote = FALSE, row.names = FALSE)
+
+# Create a boxplot for all samples
+p <- ggplot(all_data, aes(x = sample, y = value)) +
+  geom_boxplot(fill = "lightblue", color = "black", outlier.colour = "black", outlier.size = 1) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+        axis.title = element_text(size = 10),
+        plot.title = element_text(size = 12)) +
+  ggtitle("Boxplots for All Samples (Normalized Data)") +
+  ylab("Log(TPM + 1)") +
+  xlab("Sample")
+ggsave(file.path(output_dir, "boxplots_normalized_combined_requan.pdf"), p, width = 12, height = 6)
 
 # Print success message
-cat("TPM normalization completed. Normalized data saved to:", output_file, "\n")
+cat("TPM normalization and visualization completed.\n")
+cat("Normalized data saved to:", output_file, "\n")
