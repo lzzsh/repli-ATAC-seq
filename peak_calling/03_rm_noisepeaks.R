@@ -76,8 +76,7 @@ remove_global_outliers <- function(data, top_percent = 0.05, bottom_percent = 0.
   # Detect outliers in each column (both top and bottom)
   is_outlier <- function(column) {
     upper_threshold <- quantile(column, probs = 1 - top_percent, na.rm = TRUE)
-    lower_threshold <- quantile(column, probs = bottom_percent, na.rm = TRUE)
-    return(column > upper_threshold | column < lower_threshold)
+    return(column > upper_threshold)
   }
   
   # Apply outlier detection to each signal column
@@ -120,7 +119,7 @@ all_data_with_outliers_removed <- do.call(rbind, lapply(4:19, function(i) {
 
 # Save normalized and filtered data (including genomic position) to a new file
 output_file <- "./results/peaks_quan_tpm_filtered.txt"
-write.table(filtered_count, file = output_file, sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(filtered_count, file = output_file, sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
 
 # Save removal statistics to a separate file
 stats_file <- "./results/removed_peaks_statistics.txt"
