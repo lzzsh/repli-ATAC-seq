@@ -3,87 +3,49 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 
-# Step 1: Load Input Data
-input_data <- read.csv("input_table.csv")  # Input file with columns: "chr", "peak", "ES_rep1", ..., "G1_rep1"
+setwd("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/results/")
 
-# Step 2: Calculate Average Signal for Each Replication Phase
-averaged_data <- input_data %>%
+# Step 1: Load and preprocess data
+input_data <- read.table("./peaks_re_quan_tpm_normalized.txt", header = TRUE) %>%
+  select(-starts_with("ZH11.3"), -starts_with("ZH11.4")) %>%  # Remove unnecessary columns
+  mutate(across(where(is.numeric), ~ . + 1e-6))  # Add small value to avoid division by zero
+
+# Step 2: Standardize ES, MS, LS columns using "ZH11.2.G1"
+standardized_data <- input_data %>%
+  mutate(across(matches("\\.ES$|\\.MS$|\\.LS$"),
+                list(norm = ~ . / ZH11.2.G1),
+                .names = "{col}_norm"))
+
+# Step 3: Determine replication phases for each batch
+classified_data <- standardized_data %>%
   rowwise() %>%
   mutate(
-    ES_mean = mean(c_across(starts_with("ES_rep")), na.rm = TRUE),
-    MS_mean = mean(c_across(starts_with("MS_rep")), na.rm = TRUE),
-    LS_mean = mean(c_across(starts_with("LS_rep")), na.rm = TRUE),
-    G1_mean = mean(c_across(starts_with("G1_rep")), na.rm = TRUE)
+    # Calculate phases for each batch
+    NIP.1_phase = {
+      signals <- c(ES = NIP.1.ES_norm, MS = NIP.1.MS_norm, LS = NIP.1.LS_norm)
+      threshold <- 0.8 * max(signals)
+      paste(names(signals)[signals >= threshold], collapse = "")
+    },
+    ZH11.1_phase = {
+      signals <- c(ES = ZH11.1.ES_norm, MS = ZH11.1.MS_norm, LS = ZH11.1.LS_norm)
+      threshold <- 0.8 * max(signals)
+      paste(names(signals)[signals >= threshold], collapse = "")
+    },
+    ZH11.2_phase = {
+      signals <- c(ES = ZH11.2.ES_norm, MS = ZH11.2.MS_norm, LS = ZH11.2.LS_norm)
+      threshold <- 0.8 * max(signals)
+      paste(names(signals)[signals >= threshold], collapse = "")
+    }
   ) %>%
   ungroup()
 
-# Step 3: Normalize Signal (Rcwt)
-normalized_data <- averaged_data %>%
-  mutate(
-    ES_normalized = ES_mean / G1_mean,
-    MS_normalized = MS_mean / G1_mean,
-    LS_normalized = LS_mean / G1_mean
-  )
-
-# Step 4: Determine Replication Thresholds (mTc and ˆTc) for Each Chromosome
-threshold_results <- normalized_data %>%
-  group_by(chr) %>%
-  summarise(
-    mTc = {
-      replication_signals <- c(ES_normalized, MS_normalized, LS_normalized)
-      sorted_signals <- sort(replication_signals, decreasing = FALSE)
-      coverage_rate <- seq_along(sorted_signals) / length(sorted_signals)
-      coverage_diff <- c(0, diff(coverage_rate) / diff(sorted_signals))
-      sorted_signals[which.max(abs(coverage_diff))]
-    },
-    hat_Tc = {
-      replication_signals <- c(ES_normalized, MS_normalized, LS_normalized)
-      sorted_signals <- sort(replication_signals, decreasing = FALSE)
-      coverage_rate <- seq_along(sorted_signals) / length(sorted_signals)
-      coverage_diff <- c(0, diff(coverage_rate) / diff(sorted_signals))
-      valid_indices <- which(sorted_signals < mTc & abs(coverage_diff) < 0.1)
-      if (length(valid_indices) > 0) sorted_signals[max(valid_indices)] else mTc
-    },
-    .groups = "drop"
-  )
-
-# Step 5: Apply Replication Thresholds to Classify Replication Signal
-classified_data <- normalized_data %>%
-  left_join(threshold_results, by = "chr") %>%
-  mutate(
-    ES_classification = ifelse(ES_normalized > hat_Tc, "Replicating", "Non-replicating"),
-    MS_classification = ifelse(MS_normalized > hat_Tc, "Replicating", "Non-replicating"),
-    LS_classification = ifelse(LS_normalized > hat_Tc, "Replicating", "Non-replicating")
-  )
-
-# Step 6: Assign Multiple Replication Phases
-# Determine all replication phases where the signal exceeds the threshold
+# Step 4: Summarize final classification by voting
 classified_data <- classified_data %>%
   rowwise() %>%
   mutate(
-    replication_phases = paste(
-      c(
-        if (ES_normalized > hat_Tc) "Early S-phase" else NULL,
-        if (MS_normalized > hat_Tc) "Middle S-phase" else NULL,
-        if (LS_normalized > hat_Tc) "Late S-phase" else NULL
-      ),
-      collapse = ", "
-    ),
-    replication_phases = ifelse(replication_phases == "", "Non-replicating", replication_phases)
+    final_phase = names(sort(table(c(NIP.1_phase, ZH11.1_phase, ZH11.2_phase)), decreasing = TRUE)[1])
   ) %>%
   ungroup()
 
-# Step 7: Visualize Classification Results
-plot_signal_distribution <- function(data, phase, title) {
-  ggplot(data, aes_string(x = paste0(phase, "_normalized"), fill = paste0(phase, "_classification"))) +
-    geom_histogram(binwidth = 0.1, alpha = 0.8, position = "stack") +
-    labs(title = title, x = paste0("Normalized Signal (", phase, ")"), y = "Count") +
-    theme_minimal()
-}
-
-plot_signal_distribution(classified_data, "ES", "Early S-phase Signal Distribution")
-plot_signal_distribution(classified_data, "MS", "Middle S-phase Signal Distribution")
-plot_signal_distribution(classified_data, "LS", "Late S-phase Signal Distribution")
-
-# Step 8: Save Results
-write.csv(classified_data, "replication_classification_multiple_phases.csv", row.names = FALSE)
+# Step 5: Save results
+write.csv(classified_data, "replication_classification_results.csv", row.names = FALSE)
