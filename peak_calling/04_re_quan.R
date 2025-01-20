@@ -13,8 +13,8 @@ colnames(count) <- c("chr", "start", "end",
                      "ZH11-3-ES", "ZH11-3-MS", "ZH11-3-LS",
                      "ZH11-4-ES", "ZH11-4-MS", "ZH11-4-LS",
                      "ZH11-2-G1", "ZH11-2-ES", "ZH11-2-MS", "ZH11-2-LS",
-                     "ZH11-1-ES", "ZH11-1-MS", "ZH11-1-LS",
-                     "NIP-1-ES", "NIP-1-MS", "NIP-1-LS")
+                     "ZH11-1-G1", "ZH11-1-ES", "ZH11-1-MS", "ZH11-1-LS",
+                     "NIP-1-G1", "NIP-1-ES", "NIP-1-MS", "NIP-1-LS")
 
 # Directory to save the results
 output_dir <- "."

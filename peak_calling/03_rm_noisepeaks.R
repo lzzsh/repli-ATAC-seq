@@ -13,14 +13,17 @@ colnames(count) <- c("chr", "start", "end",
                      "ZH11-3-ES", "ZH11-3-MS", "ZH11-3-LS",
                      "ZH11-4-ES", "ZH11-4-MS", "ZH11-4-LS",
                      "ZH11-2-G1", "ZH11-2-ES", "ZH11-2-MS", "ZH11-2-LS",
-                     "ZH11-1-ES", "ZH11-1-MS", "ZH11-1-LS",
-                     "NIP-1-ES", "NIP-1-MS", "NIP-1-LS")
+                     "ZH11-1-G1", "ZH11-1-ES", "ZH11-1-MS", "ZH11-1-LS",
+                     "NIP-1-G1", "NIP-1-ES", "NIP-1-MS", "NIP-1-LS")
 
 # Directory to save the results
 output_dir <- "./results"
 if (!dir.exists(output_dir)) {
   dir.create(output_dir)
 }
+
+# Remove the G1 column
+count <- count %>% select(-c("ZH11-2-G1", "ZH11-1-G1", "NIP-1-G1"))
 
 # Initialize data frames for plotting
 all_data_no_outliers <- data.frame()
@@ -32,7 +35,7 @@ normalize_tpm <- function(data) {
   data$RegionLength <- data$end - data$start + 1
   
   # Apply TPM normalization for each selected column
-  data[, 4:19] <- lapply(data[, 4:19], function(col) {
+  data[, 4:18] <- lapply(data[, 4:18], function(col) {
     # Calculate RPK (Reads Per Kilobase)
     rpk <- col / (data$RegionLength / 1000)
     # Calculate scaling factor (Total RPK / 10^6)
@@ -47,7 +50,7 @@ normalize_tpm <- function(data) {
 
 # Function to remove local outliers (within each sample) using IQR
 remove_local_outliers <- function(data) {
-  signal_cols <- 4:19
+  signal_cols <- 4:18
   initial_rows <- nrow(data)
   
   # Apply IQR-based filtering to each signal column
@@ -55,7 +58,7 @@ remove_local_outliers <- function(data) {
     Q1 <- quantile(col, 0.25, na.rm = TRUE)
     Q3 <- quantile(col, 0.75, na.rm = TRUE)
     IQR <- Q3 - Q1
-    lower_bound <- max(0, Q1 - 1.5 * IQR)  # Ensure lower bound is not negative
+    lower_bound <- Q1 - 1.5 * IQR
     upper_bound <- Q3 + 1.5 * IQR
     col[col < lower_bound | col > upper_bound] <- NA  # Set outliers to NA
     return(col)
@@ -70,7 +73,7 @@ remove_local_outliers <- function(data) {
 
 # Function to remove global outliers (both top and bottom percentages)
 remove_global_outliers <- function(data, top_percent = 0.05, bottom_percent = 0.05, threshold_fraction = 0.5) {
-  signal_cols <- 4:19
+  signal_cols <- 4:18
   initial_rows <- nrow(data)
   
   # Detect outliers in each column (both top and bottom)
@@ -98,7 +101,7 @@ remove_global_outliers <- function(data, top_percent = 0.05, bottom_percent = 0.
 normalized_count <- normalize_tpm(count)
 
 # Step 2: Store data for plotting before removing any outliers
-all_data_no_outliers <- do.call(rbind, lapply(4:19, function(i) {
+all_data_no_outliers <- do.call(rbind, lapply(4:18, function(i) {
   data.frame(value = log(normalized_count[, i] + 1), sample = colnames(normalized_count)[i])
 }))
 
@@ -113,7 +116,7 @@ filtered_count <- global_outlier_result$filtered_data
 global_removed_count <- global_outlier_result$removed_count
 
 # Step 5: Store data for plotting after removing global outliers
-all_data_with_outliers_removed <- do.call(rbind, lapply(4:19, function(i) {
+all_data_with_outliers_removed <- do.call(rbind, lapply(4:18, function(i) {
   data.frame(value = log(filtered_count[, i] + 1), sample = colnames(filtered_count)[i])
 }))
 
