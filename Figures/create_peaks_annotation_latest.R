@@ -59,6 +59,33 @@ classified_data <- normalized_data %>%
   # Remove rows where final_phase is "Non-replication" or "unknown"
   filter(!final_phase %in% c("Non-replication", "unknown"))
 
+# Step 4: Generate GTF-like format using pre-computed phase
+classified_data$phase <- sapply(classified_data$phase, function(x) gsub("S", "", x))
+peaks_reads_ZH11 <- classified_data %>%
+  mutate(annotation = case_when(
+    phase == "E" ~ "Name=ES;color=#2250F1;",
+    phase == "EM" ~ "Name=ESMS;color=#28C5CC;",
+    phase == "M" ~ "Name=MS;color=#1A8A12;",
+    phase == "ML" ~ "Name=MSLS;color=#FFFD33;",
+    phase == "L" ~ "Name=LS;color=#FB0018;",
+    phase == "EL" ~ "Name=ESLS;color=#EA3CF2;",
+    phase == "EML" ~ "Name=ESMSLS;color=#FAB427;",
+    TRUE ~ ""
+  )) %>%
+  mutate(
+    source = ".",
+    score = ".",
+    strand = ".",
+    frame = ".",
+    feature = "peaks"
+  ) %>%
+  select(chr, source, feature, start, end, score, strand, frame, annotation)
+
+# Step 5: Save GTF file
+write.table(peaks_reads_ZH11, "ZH11.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
+
+cat("GTF-like file saved as 'ZH11.gff3'.\n")
+  
 # Step 4: Save results
 write.csv(classified_data, "replication_classification_results.csv", row.names = FALSE)
 
