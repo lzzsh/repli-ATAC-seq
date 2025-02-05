@@ -86,9 +86,14 @@ peaks_reads_ZH11$start <- format(peaks_reads_ZH11$start, scientific = FALSE, tri
 peaks_reads_ZH11$end <- format(peaks_reads_ZH11$end, scientific = FALSE, trim = TRUE)
 write.table(peaks_reads_ZH11, "ZH11.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
 
+classified_data$start <- format(classified_data$start, scientific = FALSE, trim = TRUE)
+classified_data$end <- format(classified_data$end, scientific = FALSE, trim = TRUE)
+selected_col <- c("chr","start","end","final_phase")
+write.table(classified_data[,selected_col], "/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/ZH11_RT.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
+
 cat("GTF-like file saved as 'ZH11.gff3'.\n")
 
-# Step 4: Save results
+# Step 6: Save results
 write.csv(classified_data, "replication_classification_results.csv", row.names = FALSE)
 
 
