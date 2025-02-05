@@ -49,11 +49,11 @@ annotate <- rbind(transposon_class,TSS)
 # write.table(annotate,"~/Desktop/Rfiles/peak_unit/annotate.bed",row.names = F,quote=F,sep = "\t",col.names = F)
 
 # merge annotate and unannotate file
-annotate <- read.table("~/Desktop/Rfiles/peak_unit/annotate_RT_2.bed", sep = "\t")
+annotate <- read.table("~/Desktop/Rfiles/peak_unit/annotate_RT.bed", sep = "\t")
 annotate <- annotate %>%
   setNames(c("chr","start","end","RT","feature"))
 
-unannotate <- read.table("~/Desktop/Rfiles/peak_unit/unannotated_RT_2.bed")
+unannotate <- read.table("~/Desktop/Rfiles/peak_unit/unannotated_RT.bed")
 unannotate$feature <- "unannotate"
 unannotate <- unannotate %>%
   mutate(feature = "unannotate") %>%
@@ -69,7 +69,8 @@ feature_RT <- feature_RT %>%
                              feature == "unannotate" ~ "Unannotate")) 
 
 # peaks_reads or peaks_reads_ZH11
-peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads_2_control.txt", header = T, sep = "\t")
+peaks_reads <- read.table("~/Desktop/Rfiles/peak_unit/ZH11_RT.gff3", sep = "\t")
+colnames(peaks_reads) <- c("chr","start","end","RT")
 feature_RT <- feature_RT %>%
   arrange(across(everything()))
 
