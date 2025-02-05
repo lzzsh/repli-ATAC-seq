@@ -3,7 +3,7 @@ library(ggplot2)
 library(ggstatsplot)
 
 # load gff which contains the RT location of each open chromatin region
-gff <- read.table("~/Desktop/Rfiles/idr_peaks/ZH11_2_control.gff3",comment.char = "")
+gff <- read.table("~/Desktop/repli-ATAC-seq/segamentation/ZH11.gff3",comment.char = "")
 gff <- gff[,c(1,4,5,9)]
 colnames(gff)<-c("chr","start","end","RT")
 gff$RT <- lapply(gff$RT, function(x) unlist(strsplit(x,";"))[1])
@@ -19,15 +19,14 @@ RT_length$freq <- RT_length[,2]/sum(RT_length[,2])
 
 # pie chart
 gff$RT <- factor(gff$RT,levels = c("EML","EL","L","ML","M","EM","E"))
-Figure1A <- ggpiestats(gff, 'RT',  
-                       results.subtitle = F, 
-                       factor.levels = c('4 Cylinders', '6 Cylinders', '8 Cylinders'),
-                       slice.label = 'percentage', 
-                       perc.k = 2, 
-                       direction = -1, 
-                       palette = 'Pastel2', 
-                       title = 'Partition of total genome replication into seven RT segment classes')+
-  scale_fill_manual(values=c(E = "#2250F1", EM = "#28C5CC", M = "#1A8A12" , ML = "#FFFD33", L = "#FB0018", EL = "#FFEDA0", EML = "#FAB427"))
+library(ggrepel)
+
+Figure1A <- ggplot(gff, aes(x = "", fill = RT)) +
+  geom_bar(width = 1, aes(weight = length), stat = "count") +
+  coord_polar(theta = "y") +
+  scale_fill_manual(values = c(E = "#2250F1", EM = "#28C5CC", M = "#1A8A12", ML = "#FFFD33", L = "#FB0018", EL = "#FFEDA0", EML = "#FAB427")) +
+  labs(title = "Partition of total genome replication into seven RT segment classes") +
+  theme_void()
 Figure1A
 # ggsave("~/Documents/Github/repli-ATAC-seq/output/Figures/Figure1A.pdf", Figure1A , width = 8, height = 5)
 
