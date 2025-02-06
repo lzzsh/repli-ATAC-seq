@@ -9,7 +9,7 @@ colnames(gene_data) <- c("chrom","start","end","strand","Geneid")
 gene_data$end <- gene_data$start;gene_data$start <- gene_data$end - 1
 # write.table(gene_data,"~/Desktop/Rfiles/gene_data.txt",row.names = F,quote=F,sep = "\t",col.names = F)
 
-TSS_RT <- read.table("~/Desktop/Rfiles/idr_peaks/TSS_RT_2_control.bed") %>%
+TSS_RT <- read.table("~/Desktop/Rfiles/idr_peaks/TSS_RT.bed") %>%
   dplyr::select(c(1,2,3,6,7)) %>%
   setNames(c("chrom","start","end","strand","RT"))
 
@@ -53,9 +53,9 @@ RPKM_plot$RPKM = factor(RPKM_plot$RPKM,levels = c("F=0","0<F<=1","1<F<=10",
                                                   "10<F<=100","F>100"))
 
 # normalization
-peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads_2_control.txt", header = T, sep = "\t")
-
-RT_freq <- gene_rpkm %>% group_by(RT)%>%
+peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/ZH11_RT.gff3", sep = "\t")
+colnames(peaks_reads) <- c("chr","start","end","RT")
+RT_freq <- peaks_reads %>% group_by(RT)%>%
   summarise(Sum = sum(end) - sum(start))%>%
   filter(!(RT %in% c("EL","EML")))%>%
   mutate(percent = Sum/sum(Sum), RT = factor(RT,levels = c("E", "EM", "M","ML","L")))
