@@ -2,8 +2,9 @@ library(dplyr)
 library(ggplot2)
 
 # load histone_RT.bed file 
-peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads_2_control.txt", header = T, sep = "\t")
-histone <- read.table("~/Desktop/Rfiles/peak_unit/Histone_RT_2.bed", sep = "\t")
+peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/ZH11_RT.gff3", sep = "\t")
+histone <- read.table("~/Desktop/Rfiles/peak_unit/Histone_RT.bed", sep = "\t")
+colnames(peaks_reads) <- c("chr","start","end","RT")
 colnames(histone)[1:3]<- c("chr","start","end")
 
 histone <- merge(histone,peaks_reads[,c("chr","start","end","RT")],by=c("chr","start","end")) 
