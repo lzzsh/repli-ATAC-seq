@@ -13,7 +13,8 @@ colnames(symbol) <- c("ID","TF")
 tf_location <- merge(tf_location,symbol,by="ID")
 
 # normalization
-peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/peaks_reads_2_control.txt", header = T, sep = "\t")
+peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/ZH11_RT.gff3", sep = "\t")
+colnames(peaks_reads) <- c("chr","start","end","RT")
 RT_freq <- peaks_reads %>% group_by(RT)%>%
   summarise(Sum = sum(end) - sum(start))%>%
   filter(!(RT %in% c("EL","EML","ML")))%>%
@@ -66,7 +67,7 @@ pic_heatmap<-pheatmap(data.1,show_rownames = FALSE,show_colnames = TRUE,
                                                nrow(data.1)),cluster_rows = FALSE)
 #,color = colorRampPalette(c("#547297", "#8C9EBA", "#D9E0E7","#F3DBD6","#DA8F87"
 #                           ,"#D54846"))(100))
-ggsave("~/Desktop/photo/tf_location_ZH11_4RT.pdf", pic_heatmap , width = 8, height = 5)
+ggsave("~/Documents/GitHub/repli-ATAC-seq/output/Figures/tf_location_ZH11_4RT.pdf", pic_heatmap , width = 8, height = 5)
 
 rownames(data.1)[rownames(data.1) == "ATHB-40"] <- "HB-5"
 data.1$motif_alt_id<-c(rownames(data.1))
@@ -100,4 +101,4 @@ rpkm <- read.table("~/Desktop/Rfiles/peak_unit/NIP_rep1_rep2_FPKM.featureCounts.
 rpkm <- rpkm[,c(1,3,5)]
 colnames(rpkm) <- c("MSU","FPKM.1","FPKM.2") 
 a <- merge(a,rpkm,by="MSU",all.x=TRUE)
-# write.table(a,"~/Desktop/Rfiles/peak_unit/tf_location_NIP_4RT_all.csv",quote=F,sep = ",",row.names = F)
+# write.table(a,"~/Documents/GitHub/repli-ATAC-seq/output/tf_location_NIP_4RT_all.csv",quote=F,sep = ",",row.names = F)
