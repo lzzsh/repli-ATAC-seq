@@ -55,7 +55,13 @@ classified_data <- normalized_data %>%
       )
     )
   ) %>%
-  ungroup() %>%
+  ungroup() 
+
+classified_data$start <- format(classified_data$start, scientific = FALSE, trim = TRUE)
+classified_data$end <- format(classified_data$end, scientific = FALSE, trim = TRUE)
+write.table(classified_data[,c("chr","start","end","final_phase")], "ZH11_RT_all.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
+
+classified_data >- classified_data %>%
   # Remove rows where final_phase is "Non-replication" or "unknown"
   filter(!final_phase %in% c("Non-replication", "unknown"))
 
