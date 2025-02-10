@@ -15,7 +15,7 @@ query_result <- dbGetQuery(JASPARConnect, "SELECT * FROM MATRIX WHERE name LIKE 
 
 # Select the first matching motif
 if (nrow(query_result) > 0) {
-  wox11_id <- query_result$ID[1]
+  wox11_id <- query_result$ID[2]
   cat("Wox11 Motif ID:", wox11_id, "\n")
 } else {
   stop("Error: No WOX11 motif found in JASPAR2024 database.")
@@ -60,14 +60,25 @@ seqs <- getSeq(genome, gr)
 seqs <- DNAStringSet(seqs)
 
 # Scan sequences for motif occurrences
-hits <- lapply(as.list(seqs), function(seq) matchPWM(wox11_pwm, seq, min.score = "80%"))
+hits <- lapply(as.list(seqs), function(seq) matchPWM(wox11_pwm, seq, min.score = "70%"))
 
 # Select peaks containing the motif
 selected_indices <- which(lengths(hits) > 0)
 selected_peaks <- peaks[selected_indices, ]
 
 # Save Results**
-write.table(selected_peaks, file="wox11_peaks_with_motif.bed", sep="\t",
+write.table(selected_peaks, file="/storage/liuxiaodongLab/liaozizhuo/Projects/cuttag/macs2/macs2_p1e-5/xw11_cut_out/wox11_peaks_with_motif2.bed", sep="\t",
             row.names=FALSE, col.names=FALSE, quote=FALSE)
 
 cat("Total number of peaks containing the Wox11 motif:", nrow(selected_peaks), "\n")
+
+
+a <- read.table("/storage/liuxiaodongLab/liaozizhuo/Projects/cuttag/macs2/macs2_p1e-5/xw11_cut_out/wox11_peaks_with_motif1.bed")
+b <- read.table("/storage/liuxiaodongLab/liaozizhuo/Projects/cuttag/macs2/macs2_p1e-5/xw11_cut_out/wox11_peaks_with_motif2.bed")
+combined_unique <- rbind(a, b) %>%
+  distinct(V4, .keep_all = TRUE)  # Keep only unique V4 values, while keeping other columns
+
+# Save the result (optional)
+write.table(combined_unique, "/storage/liuxiaodongLab/liaozizhuo/Projects/cuttag/macs2/macs2_p1e-5/xw11_cut_out/combined_unique_peaks.bed", row.names = FALSE, col.names = FALSE, quote = FALSE, sep = "\t")
+
+
