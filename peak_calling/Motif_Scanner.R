@@ -22,29 +22,34 @@ if (nrow(query_result) > 0) {
 }
 
 # Retrieve PWM Data for the Selected Motif**
-pwm_query <- dbGetQuery(JASPARConnect, paste0("SELECT * FROM MATRIX_DATA WHERE ID = '", wox11_id, "'"))
+pfm_query <- dbGetQuery(JASPARConnect, paste0("SELECT * FROM MATRIX_DATA WHERE ID = '", wox11_id, "'"))
 
 # Reformat the PWM Data
-pwm_wide <- pwm_query %>%
+pfm_wide <- pfm_query %>%
   dplyr::select(row, col, val) %>%   # Select relevant columns
   pivot_wider(names_from = row, values_from = val) %>%  # Convert to wide format
   arrange(col)  # Ensure correct motif order
 
 # Convert to matrix format and transpose for PWM creation
-pwm_matrix <- as.matrix(pwm_wide[, -1])  # Remove `col` column
-pfm_matrix <- round(pwm_matrix * 1000)   # Convert to integer counts
-storage.mode(pfm_matrix) <- "integer"    # Ensure matrix is integer
-rownames(pfm_matrix) <- c("A", "C", "G", "T")  # Assign row names
+pfm_matrix <- as.matrix(pfm_wide[, -1])  # Remove `col` column
+pfm_matrix <- t(round(pfm_matrix))   # Convert to integer counts
 
-# Convert PFM to PWM
-wox11_pwm <- PWM(t(pfm_matrix), type = "log2probratio",
-                 prior.params = c(A=0.25, C=0.25, G=0.25, T=0.25))
+# Step 2: Define the pseudocount value
+pseudocount <- 1  # You can adjust this value
+
+# Step 3: Compute the modified Position Probability Matrix (PPM) using the given formula
+col_sums <- colSums(pfm_matrix)  # Total count at each position
+ppm_matrix <- sweep(pfm_matrix + pseudocount, 2, col_sums + 4 * pseudocount, "/")
+
+# Step 4: Convert PPM to Position Weight Matrix (PWM)
+background_freq <- c(0.25, 0.25, 0.25, 0.25)  # Assume uniform background
+wox11_pwm <- log2(ppm_matrix / background_freq)  # Log-odds transformation
 
 # Load Genome and Extract Sequences**
-genome <- FaFile("/Users/lzz/Desktop/repli-ATAC-seq/reference_genome/rice_all_genomes_v7.fasta")
+genome <- FaFile("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/rice_all_genomes_v7.fasta")
 
 # Read peak regions from the narrowPeak file
-peaks <- read.table("/Users/lzz/Desktop/repli-ATAC-seq/cuttag/macs2/xw11_cut_peaks_top1000.narrowPeak", header=FALSE)
+peaks <- read.table("/storage/liuxiaodongLab/liaozizhuo/Projects//cuttag/macs2/macs2_p1e-5/xw11_cut_out/xw11_cut_peaks_top1000.narrowPeak", header=FALSE)
 gr <- GRanges(seqnames=peaks$V1, ranges=IRanges(start=peaks$V2, end=peaks$V3))
 
 # Retrieve sequences corresponding to peaks
