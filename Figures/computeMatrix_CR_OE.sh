@@ -34,14 +34,14 @@ plotHeatmap -m matrix_peaks_control_CR.gz  -out TSS_heatmap_control_CR.pdf  --re
 
 
 # ZH11-2_peaks_ES
-computeMatrix reference-point  -b 1000 -a 1000 -R ES_2_control_tss.txt EMS_2_control_tss.txt MS_2_control_tss.txt MLS_2_control_tss.txt LS_2_control_tss.txt -S \
-/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-adjp_result/merged_bam/bams/bws/LZZ-1-d.bw  \
-/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-adjp_result/merged_bam/bams/bws/LZZ-3-p.bw /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-2-g_result/bwa_all_rawdata/bws/LZZ-2-g.bw \
-/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup/LZZ-adjp_result/merged_bam/bams/bws/LZZ-3-j.bw  \
---skipZeros -o matrix_peaks_control_CR_2_ES.gz --outFileSortedRegions regions_peaks_control_CR_2_ES.bed
+computeMatrix reference-point  -b 1000 -a 1000 -R ES_tss.txt EMS_tss.txt MS_tss.txt MLS_tss.txt LS_tss.txt -S \
+/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/results/bws/LZZ-1-d_S99_sort_rmdup_rmor_q30.bw  \
+/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/results/bws/LZZ-3-p_S99_sort_rmdup_rmor_q30.bw /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/results/bws/LZZ-2-g_S99_sort_rmdup_rmor_q30.bw \
+/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/results/bws/LZZ-3-j_S99_sort_rmdup_rmor_q30.bw  \
+--skipZeros -o matrix_peaks_CR_ES.gz --outFileSortedRegions regions_peaks_CR_ES.bed
 
-plotProfile -m matrix_peaks_control_CR_2_ES.gz  -out TSS_profile_control_CR_2_ES.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_control_CR_2_ES.bed --plotFileFormat pdf --perGroup
-plotHeatmap -m matrix_peaks_control_CR_2_ES.gz  -out TSS_heatmap_control_CR_2_ES.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_control_CR_2_ES.bed --plotFileFormat pdf --perGroup \
+plotProfile -m matrix_peaks_CR_ES.gz  -out TSS_profile_CR_ES.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_CR_ES.bed --plotFileFormat pdf --perGroup
+plotHeatmap -m matrix_peaks_CR_ES.gz  -out TSS_heatmap_CR_ES.pdf  --refPointLabel TSS --regionsLabel E EM M ML L --outFileSortedRegions location_CR_ES.bed --plotFileFormat pdf --perGroup \
 --samplesLabel ES-ZH11-2 ES-wox11-OE ES-wox11-CR ES-x39-CR --heatmapHeight 35 --heatmapWidth 5 --colorMap OrRd
 
 
