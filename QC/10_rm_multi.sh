@@ -10,7 +10,7 @@
 #SBATCH --mail-user=liaozizhuo@westlake.edu.cn
 
 # Loop through all .bam files in the current directory
-for file in *.bam; do
+for file in *q30.bam; do
     echo "Processing $file ..."
 
     # Create a temporary file to store the filtered results
