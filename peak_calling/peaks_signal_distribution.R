@@ -56,14 +56,27 @@ remove_local_outliers <- function(data) {
   # Data frame to store outlier information
   outlier_info <- data.frame()
   
+  # Data frame to store IQR bounds for each sample
+  iqr_bounds <- data.frame(Sample = character(), Q1 = numeric(), Q3 = numeric(),
+                           LowerBound = numeric(), UpperBound = numeric(), stringsAsFactors = FALSE)
+  
   # Apply IQR-based filtering to each signal column
   for (col_idx in signal_cols) {
     col_name <- colnames(data)[col_idx]
     Q1 <- quantile(data[[col_idx]], 0.25, na.rm = TRUE)
     Q3 <- quantile(data[[col_idx]], 0.75, na.rm = TRUE)
-    IQR <- Q3 - Q1
-    lower_bound <- Q1 - 2.0 * IQR
-    upper_bound <- Q3 + 2.0 * IQR
+    IQR_value <- Q3 - Q1
+    lower_bound <- Q1 - 1.5 * IQR_value
+    upper_bound <- Q3 + 1.5 * IQR_value
+    
+    # Store IQR bounds
+    iqr_bounds <- rbind(iqr_bounds, data.frame(Sample = col_name, Q1 = Q1, Q3 = Q3,
+                                               LowerBound = lower_bound, UpperBound = upper_bound))
+    
+    # Print IQR bounds for each sample
+    cat("Sample:", col_name, "\n",
+        "Q1:", Q1, "| Q3:", Q3, "\n",
+        "Lower Bound:", lower_bound, "| Upper Bound:", upper_bound, "\n\n")
     
     # Identify outliers
     outliers <- (data[[col_idx]] < lower_bound) | (data[[col_idx]] > upper_bound)
@@ -80,12 +93,22 @@ remove_local_outliers <- function(data) {
     data[[col_idx]][outliers] <- NA
   }
   
+  # Save IQR bounds to a file
+  write.table(iqr_bounds, file = "./results/IQR_bounds.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+  
+  # Save outlier information to a file
+  write.table(outlier_info, file = "./results/local_outliers_info.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+  
+  cat("IQR bounds saved to: ./results/IQR_bounds.txt\n")
+  cat("Local outliers information saved to: ./results/local_outliers_info.txt\n")
+  
   # Remove rows with any NA
   filtered_data <- data[complete.cases(data), ]
   final_rows <- nrow(filtered_data)
   removed_count <- initial_rows - final_rows
   
-  return(list(filtered_data = filtered_data, removed_count = removed_count, outlier_info = outlier_info))
+  return(list(filtered_data = filtered_data, removed_count = removed_count, 
+              outlier_info = outlier_info, iqr_bounds = iqr_bounds))
 }
 
 # Function to remove global outliers (both top and bottom percentages)
@@ -186,3 +209,62 @@ cat("Filtered data (with position) saved to:", output_file, "\n")
 cat("Statistics saved to:", stats_file, "\n")
 cat("Local outliers removed:", local_removed_count, "\n")
 cat("Global outliers removed:", global_removed_count, "\n")
+
+# signal histplot
+org <- read.table("./organelle_peaks.bed")
+org <- org %>% unique()
+colnames(org)[1:3] <- c("chr","start","end")
+org_no_outliers <- read.table("./organelle_peaks_no_outliers.bed")
+org_no_outliers <- org_no_outliers %>% unique()
+colnames(org_no_outliers)[c(1,4,5)] <- c("chr","start","end")
+
+# Select the first three columns from org and org_no_outliers
+org_subset <- org %>% select(1:3)
+org_no_outliers_subset <- org_no_outliers %>% select(1,4,5)
+
+# Filter normalized_count to keep rows that match org's first three columns
+filtered_by_org <- normalized_count %>%
+  semi_join(org_subset, by = colnames(org_subset))
+
+# Filter normalized_count to keep rows that match org_no_outliers' first three columns
+filtered_by_org_no_outliers <- normalized_count %>%
+  semi_join(org_no_outliers_subset, by = colnames(org_no_outliers_subset))
+
+col_names = c(
+             "ZH11-3-ES", "ZH11-3-MS", "ZH11-3-LS",
+             "ZH11-4-ES", "ZH11-4-MS", "ZH11-4-LS",
+             "ZH11-2-ES", "ZH11-2-MS", "ZH11-2-LS",
+             "ZH11-1-ES", "ZH11-1-MS", "ZH11-1-LS",
+             "NIP-1-ES", "NIP-1-MS", "NIP-1-LS")
+
+count <- filtered_by_org
+
+# Select signal columns (assuming the first three columns are chr, start, and end)
+signal_cols <- 4:(ncol(count)-1)
+
+# Convert the data to long format (tidy data)
+long_data <- count %>%
+  select(all_of(signal_cols)) %>%
+  pivot_longer(cols = everything(), names_to = "Sample", values_to = "Signal")
+
+# Keep only signal values greater than 50 and apply log2 transformation
+long_data <- long_data %>%
+  mutate(Log2_Signal = log2(Signal))
+
+# Plot histogram of Log2(Signal) across all samples
+ggplot(long_data, aes(x = Log2_Signal, fill = Sample, color = Sample)) +
+  geom_histogram(bins = 50, alpha = 0.7) +
+  labs(title = "Histogram of Log2(Signal) Across All Samples",
+       x = "Log2(Signal)", 
+       y = "Frequency") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+
+# Plot density plot of Log2(Signal) across all samples
+ggplot(long_data, aes(x = Log2_Signal, fill = Sample, color = Sample)) +
+  geom_density(alpha = 0.3) +  # Draw density curves with transparency
+  labs(title = "Density Plot of Log2(Signal) Across All Samples",
+       x = "Log2(Signal)", 
+       y = "Density") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
