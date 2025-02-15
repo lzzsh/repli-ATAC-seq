@@ -6,7 +6,7 @@ library(ggplot2)
 library(dplyr)
 
 # Load data
-count <- read.table("./peaks_re_quan.txt")
+count <- read.table("./peaks_re_quan_org.txt")
 
 # Add column names
 colnames(count) <- c("chr", "start", "end",
@@ -48,13 +48,13 @@ normalize_tpm <- function(data) {
 normalized_count <- normalize_tpm(count)
 
 # Prepare data for plotting
-all_data <- do.call(rbind, lapply(4:19, function(i) {
+all_data <- do.call(rbind, lapply(4:18, function(i) {
   data.frame(value = log(normalized_count[, i] + 1), sample = colnames(normalized_count)[i])
 }))
 
 # Save normalized data to a new file
-output_file <- "./peaks_re_quan_tpm_normalized.txt"
-write.table(normalized_count[,1:19], file = output_file, sep = "\t", quote = FALSE, row.names = FALSE)
+output_file <- "./peaks_re_quan_tpm_normalized_org.txt"
+write.table(normalized_count[,1:18], file = output_file, sep = "\t", quote = FALSE, row.names = FALSE)
 
 # Create a boxplot for all samples
 p <- ggplot(all_data, aes(x = sample, y = value)) +
@@ -66,7 +66,7 @@ p <- ggplot(all_data, aes(x = sample, y = value)) +
   ggtitle("Boxplots for All Samples (Normalized Data)") +
   ylab("Log(TPM + 1)") +
   xlab("Sample")
-ggsave(file.path(output_dir, "boxplots_normalized_combined_requan.pdf"), p, width = 12, height = 6)
+ggsave(file.path(output_dir, "boxplots_normalized_combined_requan_org.pdf"), p, width = 12, height = 6)
 
 # Print success message
 cat("TPM normalization and visualization completed.\n")

@@ -5,7 +5,7 @@ library(tidyr)
 setwd("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/results/")
 
 # Step 1: Load and preprocess data
-input_data <- read.table("./peaks_re_quan_tpm_normalized.txt", header = TRUE) %>%
+input_data <- read.table("./peaks_re_quan_tpm_normalized_org.txt", header = TRUE) %>%
   select(-starts_with("ZH11.2.G1"), -starts_with("ZH11.3.G1"), -starts_with("NIP.1.G1")) %>%
   mutate(across(where(is.numeric), ~ . + 1e-6))  # Avoid division by zero
 
@@ -59,7 +59,7 @@ classified_data <- normalized_data %>%
 
 classified_data$start <- format(classified_data$start, scientific = FALSE, trim = TRUE)
 classified_data$end <- format(classified_data$end, scientific = FALSE, trim = TRUE)
-write.table(classified_data[,c("chr","start","end","final_phase")], "/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/ZH11_RT_all.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
+write.table(classified_data[,c("chr","start","end","final_phase")], "/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/ZH11_RT_all_org.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
 
 classified_data <- classified_data %>%
   # Remove rows where final_phase is "Non-replication" or "unknown"
@@ -90,17 +90,17 @@ peaks_reads_ZH11 <- classified_data %>%
 # Step 5: Save GTF file
 peaks_reads_ZH11$start <- format(peaks_reads_ZH11$start, scientific = FALSE, trim = TRUE)
 peaks_reads_ZH11$end <- format(peaks_reads_ZH11$end, scientific = FALSE, trim = TRUE)
-write.table(peaks_reads_ZH11, "ZH11.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
+write.table(peaks_reads_ZH11, "ZH11_org.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
 
 classified_data$start <- format(classified_data$start, scientific = FALSE, trim = TRUE)
 classified_data$end <- format(classified_data$end, scientific = FALSE, trim = TRUE)
 selected_col <- c("chr","start","end","final_phase")
-write.table(classified_data[,selected_col], "/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/ZH11_RT.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
+write.table(classified_data[,selected_col], "/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/ZH11_RT_org.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
 
-cat("GTF-like file saved as 'ZH11.gff3'.\n")
+cat("GTF-like file saved as 'ZH11_org.gff3'.\n")
 
 # Step 6: Save results
-write.csv(classified_data, "replication_classification_results.csv", row.names = FALSE)
+write.csv(classified_data, "replication_classification_results_org.csv", row.names = FALSE)
 
 
 # # Load necessary libraries

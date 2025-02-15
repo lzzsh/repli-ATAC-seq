@@ -1,5 +1,5 @@
 # Find peaks in each S phage
-gff<-read.table("~/Desktop/Rfiles/idr_peaks/ZH11_gff.gff3",skip = 2,comment.char = "")
+gff<-read.table("~/Desktop/Rfiles/idr_peaks/ZH11_RT.gff3",skip = 2,comment.char = "")
 gff<-gff[,c(1,4,5,9)]
 colnames(gff)<-c("chr","start","end","RT")
 gff$RT<-lapply(gff$RT, function(x) unlist(strsplit(x,";"))[1])
