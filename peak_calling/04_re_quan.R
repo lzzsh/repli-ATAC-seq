@@ -32,7 +32,7 @@ normalize_tpm <- function(data) {
   
   # Apply TPM normalization for each selected column
   data[, 4:18] <- lapply(data[, 4:18], function(col) {
-    # Calculate RPK (Reads Per Kilobase)
+    # Calculate RPK (Reads Per Kilob base)
     rpk <- col / (data$RegionLength / 1000)
     # Calculate scaling factor (Total RPK / 10^6)
     scaling_factor <- sum(rpk) / 1e6
@@ -48,7 +48,7 @@ normalize_tpm <- function(data) {
 normalized_count <- normalize_tpm(count)
 
 # Prepare data for plotting
-all_data <- do.call(rbind, lapply(4:19, function(i) {
+all_data <- do.call(rbind, lapply(4:18, function(i) {
   data.frame(value = log(normalized_count[, i] + 1), sample = colnames(normalized_count)[i])
 }))
 

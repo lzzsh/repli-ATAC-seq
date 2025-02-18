@@ -5,9 +5,12 @@ library(tidyr)
 setwd("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/results/")
 
 # Step 1: Load and preprocess data
-input_data <- read.table("./peaks_re_quan_tpm_normalized.txt", header = TRUE) %>%
+input_data <- read.table("./peaks_re_quan_tpm_normalized_org.txt", header = TRUE) %>%
   select(-starts_with("ZH11.2.G1"), -starts_with("ZH11.3.G1"), -starts_with("NIP.1.G1")) %>%
-  mutate(across(where(is.numeric), ~ . + 1e-6))  # Avoid division by zero
+  mutate(
+    start = ifelse(start == 0, 1, start),  # Ensure start is at least 1
+    across(-c("chr", "start", "end"), ~ . + 1e-6)  # Avoid division by zero
+  )
 
 # Step 2: Standardize signals by ZH11.3 and ZH11.4 for each phase
 batches <- c("NIP.1", "ZH11.1", "ZH11.2")
@@ -59,11 +62,7 @@ classified_data <- normalized_data %>%
 
 classified_data$start <- format(classified_data$start, scientific = FALSE, trim = TRUE)
 classified_data$end <- format(classified_data$end, scientific = FALSE, trim = TRUE)
-write.table(classified_data[,c("chr","start","end","final_phase")], "/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/ZH11_RT_all.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
-
-classified_data <- classified_data %>%
-  # Remove rows where final_phase is "Non-replication" or "unknown"
-  filter(!final_phase %in% c("Non-replication", "unknown"))
+write.table(classified_data[,c("chr","start","end","final_phase")], "/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/ZH11_RT_all_org.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
 
 # Step 4: Generate GTF-like format using pre-computed phase
 classified_data$final_phase <- sapply(classified_data$final_phase, function(x) gsub("S", "", x))
@@ -76,8 +75,8 @@ peaks_reads_ZH11 <- classified_data %>%
     final_phase == "L" ~ "Name=LS;color=#FB0018;",
     final_phase == "EL" ~ "Name=ESLS;color=#EA3CF2;",
     final_phase == "EML" ~ "Name=ESMSLS;color=#FAB427;",
-    final_phase == "Non-replication" ~ "Name=Non-replication;color=#B0B0B0",
-    final_phase == "unknown" ~ "Name=unknown;color=#B0B0B0",
+    final_phase == "Non-replication" ~ "Name=Non-replication;color=#B0B0B0;",
+    final_phase == "unknown" ~ "Name=unknown;color=#B0B0B0;",
     TRUE ~ ""
   )) %>%
   mutate(
@@ -92,7 +91,11 @@ peaks_reads_ZH11 <- classified_data %>%
 # Step 5: Save GTF file
 peaks_reads_ZH11$start <- format(peaks_reads_ZH11$start, scientific = FALSE, trim = TRUE)
 peaks_reads_ZH11$end <- format(peaks_reads_ZH11$end, scientific = FALSE, trim = TRUE)
-write.table(peaks_reads_ZH11, "ZH11_all.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
+write.table(peaks_reads_ZH11, "ZH11_all_org.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
+
+classified_data <- classified_data %>%
+  # Remove rows where final_phase is "Non-replication" or "unknown"
+  filter(!final_phase %in% c("Non-replication", "unknown"))
 
 classified_data$start <- format(classified_data$start, scientific = FALSE, trim = TRUE)
 classified_data$end <- format(classified_data$end, scientific = FALSE, trim = TRUE)
