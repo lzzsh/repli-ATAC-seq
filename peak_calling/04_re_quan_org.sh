@@ -71,6 +71,10 @@ files=(
 	"/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/bwa_all_rawdata/LZZ-4-l_S99_sort_rmdup_rmor_q30.bam"
 	"/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_CR2/bwa_all_rawdata/LZZ-4-o_S99_sort_rmdup_rmor_q30.bam"
 	"/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata/LZZ-2-i_S99_sort_rmdup_rmor_q30.bam"
+	"/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup2/bwa_all_rawdata/LZZ-10-S_S99_sort_rmdup_rmor_q30.bam"
+	"/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup2/bwa_all_rawdata/LZZ-10-T_S99_sort_rmdup_rmor_q30.bam"
+	"/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup2/bwa_all_rawdata/LZZ-10-U_S99_sort_rmdup_rmor_q30.bam"
+	"/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq_sup2/bwa_all_rawdata/LZZ-10-V_S99_sort_rmdup_rmor_q30.bam"
 	)
 
 for file in ${files[@]}; do
