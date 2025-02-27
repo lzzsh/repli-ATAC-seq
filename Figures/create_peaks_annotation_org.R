@@ -7,7 +7,11 @@ setwd("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_no
 # Step 1: Load and preprocess data
 input_data <- read.table("./peaks_re_quan_tpm_normalized_org.txt", header = TRUE) %>%
   select(-starts_with("ZH11.2.G1"), -starts_with("ZH11.3.G1"), -starts_with("NIP.1.G1")) %>%
-  mutate(across(where(is.numeric), ~ . + 1e-6))  # Avoid division by zero
+  mutate(
+    start = ifelse(start == 0, 1, start),  # Ensure start is at least 1
+    across(-c("chr", "start", "end"), ~ . + 1e-6)  # Avoid division by zero
+  )
+
 
 # Step 2: Standardize signals by ZH11.3 and ZH11.4 for each phase
 batches <- c("NIP.1", "ZH11.1", "ZH11.2")
@@ -64,6 +68,8 @@ write.table(classified_data[,c("chr","start","end","final_phase")], "/storage/li
 classified_data <- classified_data %>%
   # Remove rows where final_phase is "Non-replication" or "unknown"
   filter(!final_phase %in% c("Non-replication", "unknown"))
+
+write.table(classified_data[,c("chr","start","end","final_phase")], "/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/ZH11_RT_org.gff3", row.names = FALSE, quote = FALSE, sep = "\t", col.names = FALSE)
 
 # Step 4: Generate GTF-like format using pre-computed phase
 classified_data$final_phase <- sapply(classified_data$final_phase, function(x) gsub("S", "", x))

@@ -3,7 +3,7 @@ library(ggplot2)
 library(ggstatsplot)
 
 # load gff which contains the RT location of each open chromatin region
-gff <- read.table("~/Desktop/repli-ATAC-seq/segamentation/ZH11.gff3",comment.char = "")
+gff <- read.table("~/Desktop/repli-ATAC-seq/segamentation/ZH11_org.gff3",comment.char = "")
 gff <- gff[,c(1,4,5,9)]
 colnames(gff)<-c("chr","start","end","RT")
 gff$RT <- lapply(gff$RT, function(x) unlist(strsplit(x,";"))[1])
@@ -24,7 +24,7 @@ library(ggrepel)
 Figure1A <- ggplot(gff, aes(x = "", fill = RT)) +
   geom_bar(width = 1, aes(weight = length), stat = "count") +
   coord_polar(theta = "y") +
-  scale_fill_manual(values = c(E = "#2250F1", EM = "#28C5CC", M = "#1A8A12", ML = "#FFFD33", L = "#FB0018", EL = "#FFEDA0", EML = "#FAB427")) +
+  scale_fill_manual(values = c(E = "#2C5F9E", EM = "#68A0D8", M = "#95BE6C", ML = "#E4B660", L = "#E68364", EL = "#B784A7", EML = "#9B7EB3")) +
   labs(title = "Partition of total genome replication into seven RT segment classes") +
   theme_void()
 Figure1A
@@ -36,8 +36,8 @@ gff$length <- log2((gff$end-gff$start+1))
 gff$RT <- factor(gff$RT,levels = c("E","EM","M","ML","L","EL","EML"))
 Figure1B <- ggplot(data = gff, aes(x = RT, y = length))+   
   geom_boxplot(aes(color = RT), size = 1.1)+ 
-  scale_color_manual(values=c(E = "#2250F1", EM = "#28C5CC", M = "#1A8A12" , ML = "#FFFD33", L = "#FB0018", EL = "#FFEDA0", EML = "#FAB427"))+
-  scale_fill_manual(values=c(E = "#2250F1", EM = "#28C5CC", M = "#1A8A12" , ML = "#FFFD33", L = "#FB0018", EL = "#FFEDA0", EML = "#FAB427"))+
+  scale_color_manual(values=c(E = "#2C5F9E", EM = "#68A0D8", M = "#95BE6C", ML = "#E4B660", L = "#E68364", EL = "#B784A7", EML = "#9B7EB3"))+
+  scale_fill_manual(values=c(E = "#2C5F9E", EM = "#68A0D8", M = "#95BE6C", ML = "#E4B660", L = "#E68364", EL = "#B784A7", EML = "#9B7EB3"))+
   theme_classic()+ ggtitle("Size distribution of replication timing segments.")+theme(plot.title = element_text(hjust = 0.5))+ylab("log2(Length)")
 Figure1B   
 # ggsave("~/Documents/Github/repli-ATAC-seq/output/Figures/Figure1B.pdf", Figure1B , width = 8, height = 5)

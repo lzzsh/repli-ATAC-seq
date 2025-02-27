@@ -2,7 +2,7 @@
 
 # IDR_peaks
 # Sort the files
-sort -k1,1 -k2,2n ZH11_RT.gff3 > ZH11_RT_sorted.gff3
+sort -k1,1 -k2,2n ZH11_RT_org.gff3 > ZH11_RT_org_sorted.gff3
 sort -k1,1 -k2,2n annotate_RT.bed > annotate_RT_sorted.bed
 
 # Use bedtools subtract to find unannotated regions
