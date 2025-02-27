@@ -49,11 +49,11 @@ annotate <- rbind(transposon_class,TSS)
 # write.table(annotate,"~/Desktop/Rfiles/peak_unit/annotate.bed",row.names = F,quote=F,sep = "\t",col.names = F)
 
 # merge annotate and unannotate file
-annotate <- read.table("~/Desktop/Rfiles/peak_unit/annotate_RT.bed", sep = "\t")
+annotate <- read.table("~/Desktop/Rfiles/peak_unit/annotate_RT_org.bed", sep = "\t")
 annotate <- annotate %>%
   setNames(c("chr","start","end","RT","feature"))
 
-unannotate <- read.table("~/Desktop/Rfiles/peak_unit/unannotated_RT.bed")
+unannotate <- read.table("~/Desktop/Rfiles/peak_unit/unannotated_RT_org.bed")
 unannotate$feature <- "unannotate"
 unannotate <- unannotate %>%
   mutate(feature = "unannotate") %>%
@@ -61,7 +61,7 @@ unannotate <- unannotate %>%
 
 feature_RT <- rbind(unannotate,annotate)
 feature_RT <- feature_RT %>%
-  filter(RT %in% c("E","EM","M","ML","L")) %>%
+  filter(RT %in% c("ES","ESMS","MS","MSLS","LS")) %>%
   arrange(across(everything())) %>%
   mutate(feature =case_when( feature == "gene" ~ "Gene",
                              feature == "Class I elements" ~ "Class I elements",
@@ -69,16 +69,16 @@ feature_RT <- feature_RT %>%
                              feature == "unannotate" ~ "Unannotate")) 
 
 # peaks_reads or peaks_reads_ZH11
-peaks_reads <- read.table("~/Desktop/Rfiles/peak_unit/ZH11_RT.gff3", sep = "\t")
+peaks_reads <- read.table("~/Desktop/Rfiles/peak_unit/ZH11_RT_org.gff3", sep = "\t")
 colnames(peaks_reads) <- c("chr","start","end","RT")
 feature_RT <- feature_RT %>%
   arrange(across(everything()))
 
-number_peaks_ES <- length(which(peaks_reads$RT == "E"))
-number_peaks_EMS <- length(which(peaks_reads$RT == "EM"))
-number_peaks_MS <- length(which(peaks_reads$RT == "M"))
-number_peaks_MLS <- length(which(peaks_reads$RT == "ML"))
-number_peaks_LS <- length(which(peaks_reads$RT == "L"))
+number_peaks_ES <- length(which(peaks_reads$RT == "ES"))
+number_peaks_EMS <- length(which(peaks_reads$RT == "ESMS"))
+number_peaks_MS <- length(which(peaks_reads$RT == "MS"))
+number_peaks_MLS <- length(which(peaks_reads$RT == "MSLS"))
+number_peaks_LS <- length(which(peaks_reads$RT == "LS"))
 
 total_number <- number_peaks_ES + number_peaks_EMS + number_peaks_MS + number_peaks_MLS +
   number_peaks_LS 
@@ -90,21 +90,21 @@ colnames(feature_RT_freq)[1:2] <- c("feature","RT")
 RT_freq <- feature_RT_freq %>% group_by(feature)%>%
   summarise(percent = Freq/sum(Freq), RT = RT )
 
-RT_freq$RT = factor(RT_freq$RT,levels = c("E","EM","M","ML","L"))
+RT_freq$RT = factor(RT_freq$RT,levels = c("ES","ESMS","MS","MSLS","LS"))
 RT_freq <- RT_freq %>%
   filter(!is.na(RT)) %>%
-  mutate(percent.fix = case_when(RT == "E" ~ percent * total_number /number_peaks_ES,
-                                 RT == "EM" ~ percent * total_number /number_peaks_EMS,
-                                 RT == "M" ~ percent * total_number /number_peaks_MS,
-                                 RT == "ML" ~ percent * total_number /number_peaks_MLS,
-                                 RT == "L" ~ percent * total_number /number_peaks_LS))
+  mutate(percent.fix = case_when(RT == "ES" ~ percent * total_number /number_peaks_ES,
+                                 RT == "ESMS" ~ percent * total_number /number_peaks_EMS,
+                                 RT == "MS" ~ percent * total_number /number_peaks_MS,
+                                 RT == "MSLS" ~ percent * total_number /number_peaks_MLS,
+                                 RT == "LS" ~ percent * total_number /number_peaks_LS))
 
 # plot
 Figure2A <- RT_freq %>%
   ggplot(aes(x = feature, y = percent.fix, fill = RT))+
   geom_bar( stat = "identity",colour = "black",position = "dodge")+
-  scale_fill_manual(values=c(E = "#2250F1", EM = "#28C5CC", M = "#1A8A12" , ML = "#FFFD33", L = "#FB0018", EL = "#FFEDA0", EML = "#FAB427"))+
+  scale_fill_manual(values=c(ES = "#2C5F9E", ESMS = "#68A0D8", MS = "#95BE6C", MSLS = "#E4B660", LS = "#E68364", ESLS = "#B784A7", ESMSLS = "#9B7EB3"))+
   theme_classic() +ggtitle("Replication Times for Chromatin-Related Features")+theme(plot.title = element_text(hjust = 0.5))+
   xlab("Feature")+ylab("Segment coverage")
 Figure2A
-# ggsave("~/Documents/Github/repli-ATAC-seq/output/Figures/Figure2A.pdf", Figure2A , width = 8, height = 5)      
+# ggsave("~/Documents/Github/repli-ATAC-seq/output/Figures/Figure2A.pdf", Figure2A , width = 8, height = 5)
