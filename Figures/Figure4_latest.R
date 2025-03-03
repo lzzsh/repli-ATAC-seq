@@ -6,19 +6,19 @@ library(readxl)
 library(tidyverse)
 library(org.At.tair.db)
 
-tf_location <- read.table("/Users/lzz/Desktop/Rfiles/motif_RT.bed", sep = "\t")
+tf_location <- read.table("/Users/lzz/Desktop/Rfiles/motif_RT_org.bed", sep = "\t")
 colnames(tf_location)[8] <- "ID"
 symbol <- read.table("/Users/lzz/Desktop/Rfiles/symbol.txt")
 colnames(symbol) <- c("ID","TF")
 tf_location <- merge(tf_location,symbol,by="ID")
 
 # normalization
-peaks_reads <- read.table("~/Desktop/Rfiles/idr_peaks/ZH11_RT.gff3", sep = "\t")
+peaks_reads <- read.table("~/Desktop/Rfiles/peak_unit/ZH11_RT_org.gff3", sep = "\t")
 colnames(peaks_reads) <- c("chr","start","end","RT")
 RT_freq <- peaks_reads %>% group_by(RT)%>%
   summarise(Sum = sum(end) - sum(start))%>%
-  filter(!(RT %in% c("EL","EML","ML")))%>%
-  mutate(percent = Sum/sum(Sum), RT = factor(RT,levels = c("E", "EM", "M","L")))%>%
+  filter(!(RT %in% c("ESLS","ESMSLS","MSLS")))%>%
+  mutate(percent = Sum/sum(Sum), RT = factor(RT,levels = c("ES", "ESMS", "MS","LS")))%>%
   filter(!(is.na(RT)))
 
 tf_location <- tf_location %>%
@@ -36,15 +36,15 @@ tf_location <- tf_location %>%
 tf_location_nondup <- distinct(tf_location,chr,TF,PeakID,ID, .keep_all= TRUE) %>%
   distinct(chr,TF,start, .keep_all = TRUE) %>%
   distinct(chr,TF,end, .keep_all = TRUE) %>%
-  filter(RT %in% c("E","EM","M","L")) %>%
+  filter(RT %in% c("ES","ESMS","MS","LS")) %>%
   arrange(chr, start, end) 
 
-write.table(table(tf_location_nondup$TF,tf_location_nondup$RT),"~/Desktop/Rfiles/peak_unit/tf_location_classfied.bed",row.names = T,quote=F,sep = "\t",col.names = T)
+write.table(table(tf_location_nondup$TF,tf_location_nondup$RT),"~/Desktop/Rfiles/peak_unit/tf_location_classfied_org.bed",row.names = T,quote=F,sep = "\t",col.names = T)
 
-tf_location_nondup <- as.data.frame(read.table("/Users/lzz/Desktop/Rfiles/peak_unit/tf_location_classfied.bed",header = T))
+tf_location_nondup <- as.data.frame(read.table("/Users/lzz/Desktop/Rfiles/peak_unit/tf_location_classfied_org.bed",header = T))
 # real_bs <- read_xlsx("~/Desktop/Rfiles/peak_unit/x39_49_wx11_heat.xlsx")
 # tf_location_nondup <- rbind(tf_location_nondup,real_bs)
-tf_location_nondup <- tf_location_nondup[,c("E","EM","M","L")]
+tf_location_nondup <- tf_location_nondup[,c("ES","ESMS","MS","LS")]
 tf_location_nondup <- as.data.frame(t(apply(tf_location_nondup, 1, function(x) x / sum(x))))
 # tf_location_nondup = t(apply(tf_location_nondup,1,function(x){x/sum(x)}))
 a <- RT_freq$percent
@@ -61,7 +61,22 @@ tf_family <- distinct(tf_family,motif_alt_id ,TF_family,.keep_all= TRUE)
 
 
 # plot
-data.1 <- as.data.frame(decostand(tf_location_nondup,"standardize",MARGIN = 2)) 
+data.1 <- as.data.frame(decostand(tf_location_nondup,"standardize",MARGIN = 1)) 
+
+# Identify the replication phase where each TF has the highest binding value
+max_binding_stage <- colnames(data.1)[apply(data.1, 1, which.max)]
+
+# Convert to factor with predefined order
+stage_order <- c("ES", "ESMS", "MS", "LS")
+max_binding_stage <- factor(max_binding_stage, levels = stage_order)
+
+# Sort transcription factors by their primary binding phase
+sorted_indices <- order(max_binding_stage)
+
+# Reorder data accordingly
+data.1 <- data.1[sorted_indices, ]
+
+
 pic_heatmap<-pheatmap(data.1,show_rownames = FALSE,show_colnames = TRUE,
                       display_numbers = matrix(ifelse(data.1 > 2, ""," "), 
                                                nrow(data.1)),cluster_rows = FALSE)
