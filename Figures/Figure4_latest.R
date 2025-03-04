@@ -165,10 +165,10 @@ final_data$max_binding_stage <- factor(final_data$max_binding_stage, levels = st
 
 # Generate dotplot with custom colors and size reflecting count
 p <- ggplot(final_data, aes(x = max_binding_stage, y = TF_family_TAIR)) +
-  geom_point(aes(size = count, color = max_binding_stage), alpha = 0.8) +  # 透明度优化
-  scale_color_manual(values = stage_colors) +  # 自定义颜色
-  scale_size(range = c(3, 12)) +  # 调整大小范围
-  theme_classic() +  # 使用更清晰的主题
+  geom_point(aes(size = count, color = max_binding_stage), alpha = 0.8) +  
+  scale_color_manual(values = stage_colors) +  
+  scale_size(range = c(3, 12)) +  
+  theme_classic() +  
   labs(
     title = "Top 5 TF families in Each stage",
     x = "Binding Stage",
@@ -178,9 +178,9 @@ p <- ggplot(final_data, aes(x = max_binding_stage, y = TF_family_TAIR)) +
   ) +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
-    axis.line = element_line(size = 0.8),  # 添加坐标轴
-    panel.grid.major = element_line(color = "gray90", linetype = "dashed"),  # 添加柔和网格线
+    axis.line = element_line(size = 0.8),  
+    panel.grid.major = element_line(color = "gray90", linetype = "dashed"),  
     legend.position = "right"
   ) +
-  guides(size = guide_legend(order = 1), color = guide_legend(order = 2))  # 调整图例顺序
+  guides(size = guide_legend(order = 1), color = guide_legend(order = 2)) 
 ggsave("~/Documents/GitHub/repli-ATAC-seq/output/Figures/Dotplot.pdf", p , width = 8, height = 5)
