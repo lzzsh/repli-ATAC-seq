@@ -2,6 +2,48 @@
 library(tidyverse)
 library(RColorBrewer)
 library(readxl)
+library(pheatmap)
+
+enrich <- read.csv("Documents/GitHub/repli-ATAC-seq/data/enrich.csv")
+# Determine the main stage based on the highest odds ratio
+enrich <- enrich %>%
+  mutate(
+    main_stage = case_when(
+      odds_ratio_ES >= odds_ratio_MS & odds_ratio_ES >= odds_ratio_LS ~ "ES",
+      odds_ratio_MS >= odds_ratio_ES & odds_ratio_MS >= odds_ratio_LS ~ "MS",
+      odds_ratio_LS >= odds_ratio_ES & odds_ratio_LS >= odds_ratio_MS ~ "LS"
+    )
+  )
+
+# Sort the data by main stage (ES > MS > LS) and descending odds ratio
+enrich <- enrich %>%
+  arrange(
+    factor(main_stage, levels = c("ES", "MS", "LS")),  # Order by stage
+    desc(if_else(main_stage == "ES", odds_ratio_ES,
+                 if_else(main_stage == "MS", odds_ratio_MS, odds_ratio_LS)))  # Sort by descending odds_ratio
+  )
+
+# Extract relevant columns for heatmap
+heatmap_data <- enrich %>%
+  select(odds_ratio_ES, odds_ratio_MS, odds_ratio_LS) %>%
+  as.matrix()
+
+# Set row names as TF names (if applicable)
+rownames(heatmap_data) <- enrich$TF
+
+# Plot heatmap
+p <- pheatmap(
+  heatmap_data,
+  cluster_rows = FALSE,  # Maintain the sorted order
+  cluster_cols = FALSE,  # Keep original column order
+  show_rownames = FALSE, 
+  cellwidth = 100,  # Set cell width (adjust as needed)
+  cellheight = 0.008,
+  scale = "row", 
+  main = "Stage-Specific Enrichment of eCAAS"
+)
+
+ggsave("Documents/GitHub/repli-ATAC-seq/Figures/enrichment_eCAAS.pdf",p, width = 8, height = 8, useDingbats = FALSE)
 
 # Read the GO enrichment data for each cluster
 GO_cluster_ES <- read.table("Desktop/GO_ES_20250320.txt",header = T, fill = TRUE, sep = "\t")
