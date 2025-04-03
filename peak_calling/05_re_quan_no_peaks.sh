@@ -89,13 +89,13 @@ awk '
         print $1, $2, $3, $4, $5, $6, $7;
 }' OFS="\t" peaks_5kb_vs_500bp_overlap.txt > high_overlap_regions.txt
 
-# Step 8: Extract counts of highly overlapping open regions
-aawk '
+# Step 8: Extract counts of highly overlapping open regions and merge duplicate regions
+awk '
 BEGIN {
     # Read peaks_open_region_counts.txt and store counts
     while ((getline < "peaks_open_region_counts.txt") > 0) {
         key = $1"\t"$2"\t"$3;  # Create a key using chr, start, end
-        open_counts[key] = "";  # Initialize an empty string for storing counts
+        open_counts[key] = "";  # Initialize an empty string
         for (i=4; i<=NF; i++) {
             open_counts[key] = open_counts[key] "\t" $i;  # Concatenate all counts into a single string
         }
@@ -113,40 +113,38 @@ BEGIN {
         }
         print "";  # End the line
     }
-}' OFS="\t" high_overlap_regions.txt > high_overlap_counts.txt
+}' OFS="\t" high_overlap_regions.txt > high_overlap_counts_raw.txt
 
-# Step 9: Subtract overlapping open region counts from 5000bp counts
+# Merge duplicate (chr, start, end) in high_overlap_counts.txt by summing counts
 awk '
-BEGIN {
-    # Read high_overlap_counts.txt and store counts
-    while ((getline < "high_overlap_counts.txt") > 0) {
-        key = $1"\t"$2"\t"$3;  # Create key using chr, start, end
-        overlap_counts[key] = "";  # Initialize an empty string
+{
+    key = $1"\t"$2"\t"$3;  # Create key using chr, start, end
+    if (!(key in sum)) {
+        sum[key] = $0;  # Store first occurrence
+    } else {
+        split(sum[key], values, "\t");  # Split existing values into array
         for (i=4; i<=NF; i++) {
-            overlap_counts[key] = overlap_counts[key] "\t" $i;  # Store entire count row as a string
+            values[i] += $i;  # Sum counts for duplicate regions
+        }
+        sum[key] = values[1]"\t"values[2]"\t"values[3];  # Reconstruct first 3 columns
+        for (i=4; i<=NF; i++) {
+            sum[key] = sum[key] "\t" values[i];  # Append updated counts
         }
     }
 }
-{
-    key = $1"\t"$2"\t"$3;  # Key for 5000bp window region
-
-    printf "%s\t%s\t%s", $1, $2, $3;  # Print coordinates
-
-    if (key in overlap_counts) {
-        split(overlap_counts[key], overlap_values, "\t");  # Split stored values into an array
-        for (i=4; i<=NF; i++) {
-            adj_count = $i - overlap_values[i-3];  # Subtract corresponding value
-            if (adj_count < 0) adj_count = 0;  # Ensure no negative values
-            printf "\t%d", adj_count;
-        }
-    } else {
-        for (i=4; i<=NF; i++) {
-            printf "\t%d", $i;  # If no overlap, keep original count
-        }
+END {
+    for (key in sum) {
+        print sum[key];  # Print merged counts
     }
-    print "";  # End the line
-}' OFS="\t" peaks_5kb_window_counts.txt > peaks_5kb_window_counts_filtered.txt
+}' OFS="\t" high_overlap_counts_raw.txt > high_overlap_counts.txt
 
-# Step 10: Compute final masked counts
-paste peaks_5kb_window_counts_filtered.txt peaks_open_region_counts.txt | \
-awk '{printf "%s\t%s\t%s", $1, $2, $3; for(i=4; i<=NF/2; i++) printf "\t%d", $i-$(i+NF/2); print ""}' > peaks_masked_counts.txt
+
+sort -k1,1 -k2,2n high_overlap_counts.txt > high_overlap_counts_raw.txt
+mv high_overlap_counts_raw.txt high_overlap_counts.txt
+
+# Step 9: Subtract overlapping open region counts from 5000bp counts
+paste peaks_5kb_window_counts.txt high_overlap_counts.txt | \
+awk '{printf "%s\t%s\t%s", $1, $2, $3; for (i=4; i<=NF/2; i++) printf "\t%d", $i-$(i+NF/2); print ""}' > peaks_masked_counts.txt
+
+
+
