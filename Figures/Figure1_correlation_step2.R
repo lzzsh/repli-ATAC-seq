@@ -57,11 +57,7 @@ pca_df$stage <- sub(".*-(ES|MS|LS)$", "\\1", pca_df$Sample)
 # Step 11: Draw PCA plot
 time_colors <- c("ES" = "red", "MS" = "gold", "LS" = "blue")
 
-<<<<<<< HEAD
 explained_var <- summary(pca_res)$importance[2, 1:2] * 100 
-=======
-explained_var <- summary(pca_res)$importance[2, 1:2] * 100  
->>>>>>> 655b2daac1b6d6b35a47d4165d5fe5185292bec7
 
 # Step 13: Build PCA plot with labeled axes
 pdf("/Users/lzz/Documents/GitHub/repli-ATAC-seq/output/Figures/ATAC_sample_correlation_pca.pdf", width = 8, height = 6)
