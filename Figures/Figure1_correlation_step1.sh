@@ -1,4 +1,4 @@
-bedtools makewindows -g ../genome.chrom.sizes.sorted -w 1000 -s 500 > rice_1kb_step500_windows.bed
+bedtools makewindows -g /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/genome.chrom.sizes.sorted -w 1000 -s 500 > rice_1kb_step500_windows.bed
 
 
 bedtools multicov -bams \
