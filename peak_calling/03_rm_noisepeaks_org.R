@@ -1,5 +1,5 @@
 # Set working directory
-setwd("/storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/")
+setwd("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/macs2/macs2_noctrl_p0.01/rm_noisepeak/")
 
 # Load necessary libraries
 library(ggplot2)
@@ -48,6 +48,7 @@ normalize_tpm <- function(data) {
   return(data)
 }
 
+normalized_count <- normalize_tpm(count)
 normalized_count <- normalized_count[rowMeans(normalized_count[4:18], na.rm = TRUE) < 100,]
 org <- read.table("./organelle_peaks.bed")
 org <- org %>% unique() %>% setNames(c("chr","start","end"))
