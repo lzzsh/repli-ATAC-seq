@@ -22,6 +22,9 @@ df_rt <- df %>%
   mutate(across(everything(), ~ gsub("S", "", .))) %>%
   drop_na()
 
+write.table(df_rt,"/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/fimo/meme/segmentation_all.bed", sep = "\t",
+            quote = F, row.names = F)
+
 # Step 3: Stacked bar plot of WT-to-mutant transitions
 df_long <- df_rt %>%
   pivot_longer(cols = starts_with("cr_"), names_to = "mutant", values_to = "mutant_RT")

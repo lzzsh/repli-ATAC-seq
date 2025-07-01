@@ -11,12 +11,12 @@ df <- read.csv("repli_phase_classified.csv")
 
 # Step 2: Extract the five sample columns and compute region length
 df_rt <- df %>%
-  select(chr, start, end,
-         WT = WT_phase,
-         sol1_5 = sol1_5_phase,
-         sol1_8 = sol1_8_phase,
-         tcx2_1 = tcx2_1_phase,
-         tcx2_3 = tcx2_3_phase) %>%
+  dplyr::select(chr, start, end,
+                WT = WT_phase,
+                sol1_5 = sol1_5_phase,
+                sol1_8 = sol1_8_phase,
+                tcx2_1 = tcx2_1_phase,
+                tcx2_3 = tcx2_3_phase) %>%
   mutate(length = end - start + 1)
 
 # Step 3: Convert to long format and remove Non-replication and unknown
