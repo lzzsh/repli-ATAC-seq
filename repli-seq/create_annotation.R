@@ -1,3 +1,12 @@
+setwd("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-seq-CR/segmentation")
+
+library(ggalluvial)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+df <- read.csv("repli_phase_classified.csv")
+
 write_phase_gff3 <- function(df, sample, output_dir = ".") {
   phase_col <- paste0(sample, "_phase")
   out_df <- df %>%
