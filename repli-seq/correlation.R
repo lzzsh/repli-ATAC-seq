@@ -25,23 +25,23 @@ log2rpm_matrix <- log2(rpm_matrix + 1) + 1e-6  # Adding small constant for numer
 
 # ========== Step 5: Normalize each ES/MS/LS by corresponding G1 ==========
 log2rpm_normalized <- log2rpm_matrix  # Copy matrix
-
-for (i in 1:ncol(log2rpm_matrix)) {
-  sample_name <- colnames(log2rpm_matrix)[i]
-  
-  # Skip G1 samples
-  if (grepl("-G1$", sample_name)) next
-  
-  # Try to find the matching G1 sample by replacing suffix
-  g1_name <- sub("-(ES|MS|LS)$", "-G1", sample_name)
-  
-  if (g1_name %in% colnames(log2rpm_matrix)) {
-    log2rpm_normalized[, i] <- log2rpm_matrix[, i] - log2rpm_matrix[, g1_name]
-  } else {
-    warning(paste("No matching G1 for:", sample_name))
-    log2rpm_normalized[, i] <- NA
-  }
-}
+# 
+# for (i in 1:ncol(log2rpm_matrix)) {
+#   sample_name <- colnames(log2rpm_matrix)[i]
+#   
+#   # Skip G1 samples
+#   if (grepl("-G1$", sample_name)) next
+#   
+#   # Try to find the matching G1 sample by replacing suffix
+#   g1_name <- sub("-(ES|MS|LS)$", "-G1", sample_name)
+#   
+#   if (g1_name %in% colnames(log2rpm_matrix)) {
+#     log2rpm_normalized[, i] <- log2rpm_matrix[, i] - log2rpm_matrix[, g1_name]
+#   } else {
+#     warning(paste("No matching G1 for:", sample_name))
+#     log2rpm_normalized[, i] <- NA
+#   }
+# }
 
 # ========== Step 6: Compute sample correlation ==========
 cor_matrix <- cor(log2rpm_normalized, use = "pairwise.complete.obs", method = "pearson")
@@ -67,8 +67,8 @@ log2rpm_filtered <- log2rpm_normalized[row_sd > 0, ]
 pca_res <- prcomp(t(log2rpm_filtered), scale. = TRUE)
 pca_df <- as.data.frame(pca_res$x)
 pca_df$Sample <- rownames(pca_df)
-pca_df$stage <- sub(".*-(ES|MS|LS)$", "\\1", pca_df$Sample)
-time_colors <- c("ES" = "red", "MS" = "gold", "LS" = "blue")
+pca_df$stage <- sub(".*-(ES|MS|LS|G1)$", "\\1", pca_df$Sample)
+time_colors <- c("ES" = "red", "MS" = "gold", "LS" = "blue", "G1" = "grey")
 explained_var <- summary(pca_res)$importance[2, 1:2] * 100
 
 pdf("/Users/lzz/Documents/GitHub/repli-ATAC-seq/output/Figures/ATAC_log2FC_pca.pdf", width = 8, height = 6)
@@ -82,4 +82,4 @@ ggplot(pca_df, aes(x = PC1, y = PC2, color = stage, label = Sample)) +
     y = paste0("PC2 (", round(explained_var[2], 1), "%)")
   ) +
   theme(plot.title = element_text(hjust = 0.5))
- dev.off()
+dev.off()

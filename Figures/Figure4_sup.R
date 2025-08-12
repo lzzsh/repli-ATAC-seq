@@ -56,8 +56,7 @@ enrichment_score_sorted <- enrichment_score[match(tf_results_comprehensive$TF, r
 pheatmap(enrichment_score_sorted, cluster_rows = FALSE, cluster_cols = FALSE,
          main = "TF-Level Enrichment Score",
          cellwidth = 90, cellheight = 0.6,
-         show_rownames = FALSE,
-         color = colorRampPalette(c("blue", "white", "red"))(100))
+         show_rownames = FALSE)
 
 # Step 8: Compute enrichment scores at the TF family level
 tf_family_enrichment <- enrichment_score %>%
