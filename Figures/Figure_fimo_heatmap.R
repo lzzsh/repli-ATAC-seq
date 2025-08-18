@@ -17,6 +17,8 @@ library(grid)
 tf_table <- read.table("~/Desktop/Rfiles/peak_unit/tf_location_classfied_org.bed",
                        header = TRUE, sep = "\t", row.names = 1)
 
+output_dir <- "/Users/lzz/Documents/GitHub/repli-ATAC-seq/output/Figures"
+
 ## 2) 各复制时期总暴露量（推荐用 bp 总长度；无则用区域总数）
 ##    用你的真实数值替换：
 total_bp <- c(
@@ -112,11 +114,11 @@ fam_unique <- levels(fam_factor)
 
 ## 使用指定的高对比度颜色方案
 specified_colors <- c(
-  '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', 
-  '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990', '#dcbeff', 
-  '#9A6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', 
-  '#000075', '#a9a9a9', '#ffffff', '#000000', '#ff6b35', '#004e89',
-  '#1a936f', '#88d4ab', '#c6426e', '#642ca9', '#f18f01'
+  '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4',
+  '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990', '#dcbeff',
+  '#9A6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1',
+  '#000075', '#a9a9a9', '#1e90ff', 'black', '#20b2aa', '#ff1493',
+  '#708090', '#9932cc', '#00ced1', '#b8860b', '#cd5c5c'
 )
 
 n_families <- length(fam_unique)
@@ -212,7 +214,100 @@ ht_e <- Heatmap(
 )
 draw(ht_e)
 
-output_dir <- "/Users/lzz/Documents/GitHub/repli-ATAC-seq/output/Figures"
+## ================= 筛选后的单图 =================
+## 设置筛选条件
+significance_threshold <- -log10(0.05)  # 显著性阈值 (q < 0.05)
+effect_size_threshold <- 0           # 效应量阈值 (|log2RR| > 0)
+
+## 创建筛选掩码：既显著又有较大效应量
+significant_mask <- logq_mat_t > significance_threshold & abs(log2rr_mat_t) > effect_size_threshold
+
+## 筛选数据：不符合条件的设为 NA
+filtered_log2rr <- log2rr_mat_t
+filtered_log2rr[!significant_mask] <- NA
+
+## 检查是否有符合条件的数据
+if (sum(!is.na(filtered_log2rr)) == 0) {
+  warning("没有TF满足筛选条件 (q < 0.05 且 |log2RR| > 0)")
+} else {
+  ## 只保留至少有一个显著富集的TF
+  valid_tfs <- apply(filtered_log2rr, 2, function(x) any(!is.na(x)))
+  
+  ## 新增：过滤掉Unknown家族的TF
+  non_unknown_tfs <- col_fam_factor != "Unknown"
+  
+  ## 合并两个条件：既有显著结果又不是Unknown家族
+  final_valid_tfs <- valid_tfs & non_unknown_tfs
+  
+  if (sum(final_valid_tfs) > 0) {
+    filtered_log2rr_clean <- filtered_log2rr[, final_valid_tfs, drop = FALSE]
+    filtered_fam_factor <- col_fam_factor[final_valid_tfs]
+    
+    ## 重新计算颜色范围（基于筛选后的数据）
+    rng_filtered <- max(abs(filtered_log2rr_clean), na.rm = TRUE)
+    col_fun_filtered <- colorRamp2(c(-rng_filtered, 0, rng_filtered), 
+                                   c("#7F0000", "#FFFFFF", "#00441B"))
+    
+    ## 筛选后的热图
+    ht_filtered <- Heatmap(
+      filtered_log2rr_clean,
+      name = "log2 RR\n(filtered)",
+      col = col_fun_filtered,
+      na_col = "grey90",
+      cluster_rows = FALSE,
+      cluster_columns = FALSE,
+      column_split = filtered_fam_factor,
+      cluster_column_slices = FALSE,
+      gap = grid::unit(2, "mm"),
+      top_annotation = HeatmapAnnotation(
+        Family = filtered_fam_factor,
+        col = list(Family = family_colors[levels(filtered_fam_factor)]),  ## 只使用筛选后存在的家族颜色
+        annotation_legend_param = list(title = "TF family")
+      ),
+      row_title = "Replication Phase",
+      column_title = sprintf("Significant TFs (q<0.05, |log2RR|>%g, Known families)", effect_size_threshold),
+      show_column_names = FALSE,
+      heatmap_legend_param = list(
+        title = "log2 Rate Ratio\n(Significant only)",
+        at = c(-rng_filtered, 0, rng_filtered),
+        labels = c(sprintf("%.1f", -rng_filtered), "0", sprintf("%.1f", rng_filtered))
+      )
+    )
+    
+    ## 显示筛选后的热图
+    draw(ht_filtered)
+    
+    ## 保存筛选后的热图
+    pdf(file.path(output_dir, "heatmap_filtered_significant.pdf"), 
+        width = 16, height = 5)
+    draw(ht_filtered)
+    dev.off()
+    
+    ## 输出筛选信息
+    n_total_comparisons <- nrow(logq_mat_t) * ncol(logq_mat_t)
+    n_significant <- sum(significant_mask, na.rm = TRUE)
+    n_tfs_with_sig <- sum(valid_tfs)
+    n_unknown_filtered <- sum(valid_tfs & !non_unknown_tfs)  # 被过滤掉的Unknown TF数量
+    n_final_tfs <- sum(final_valid_tfs)
+    
+    cat(sprintf("\n========== 筛选结果统计 ==========\n"))
+    cat(sprintf("筛选条件: q < %.3f 且 |log2RR| > %g，排除Unknown家族\n", 0.05, effect_size_threshold))
+    cat(sprintf("总比较次数: %d\n", n_total_comparisons))
+    cat(sprintf("符合条件的比较: %d (%.1f%%)\n", n_significant, 100*n_significant/n_total_comparisons))
+    cat(sprintf("有显著富集的TF数量: %d / %d (%.1f%%)\n", 
+                n_tfs_with_sig, ncol(logq_mat_t), 100*n_tfs_with_sig/ncol(logq_mat_t)))
+    cat(sprintf("其中Unknown家族TF: %d 个（已过滤）\n", n_unknown_filtered))
+    cat(sprintf("最终显示的TF数量: %d\n", n_final_tfs))
+    
+    ## 导出筛选后的数据
+    # write.table(data.frame(TF = colnames(filtered_log2rr_clean), t(filtered_log2rr_clean)),
+    #             file = "TF_phase_log2RR_filtered.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
+  } else {
+    warning("筛选后没有任何已知家族的TF符合条件")
+  }
+}
+
+
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
@@ -236,4 +331,4 @@ write.table(data.frame(TF = rownames(log2rr_mat), log2rr_mat),
 write.table(pref_tbl, file = "TF_preferred_phase.tsv",
             sep = "\t", quote = FALSE, row.names = FALSE)
 
-message("完成：旋转版热图已生成，并导出 TF_phase_log10P.tsv / TF_phase_log10Q.tsv / TF_phase_log2RR.tsv / TF_preferred_phase.tsv")
+message("完成：旋转版热图已生成，并导出 TF_phase_log10P.tsv / TF_phase_log10Q.tsv / TF_phase_log2RR.tsv / TF_preferred_phase.tsv\n筛选后热图已保存为 heatmap_filtered_significant.pdf")
