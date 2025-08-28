@@ -9,6 +9,8 @@ tcx2 <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/
 save_stage_regions <- function(df, label, stages = c("ES", "MS", "LS")) {
   for (stage in stages) {
     subset_df <- df[df$V4 == stage, 1:3]
+    subset_df[,2] <- round((subset_df[,2] + subset_df[,3])/2)
+    subset_df[,3] <- subset_df[,2] + 1
     filename <- paste0(label, "_", stage, ".bed")
     write.table(subset_df, file = filename, quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
   }
