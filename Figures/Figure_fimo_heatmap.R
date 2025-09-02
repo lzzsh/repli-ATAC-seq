@@ -158,6 +158,10 @@ logq_mat_t   <- t(logq_mat)
 log2rr_mat_t <- t(log2rr_mat)
 q_mat_t      <- t(q_mat)
 
+logq_mat_t   <- logq_mat_t[rev(desired_order), ]
+log2rr_mat_t <- log2rr_mat_t[rev(desired_order), ]
+q_mat_t      <- q_mat_t[rev(desired_order), ]
+
 ## 家族分组转移到列方向（列=TF）
 col_fam_factor  <- fam_factor
 col_family_cols <- family_colors  # 使用相同的颜色方案
@@ -178,7 +182,7 @@ ht_q <- Heatmap(
   column_split = col_fam_factor,        # << 按家族分列分片
   cluster_column_slices = TRUE,
   gap = grid::unit(2, "mm"),
-  top_annotation = HeatmapAnnotation(
+  bottom_annotation = HeatmapAnnotation(
     Family = col_fam_factor,
     col = list(Family = col_family_cols),
     annotation_legend_param = list(title = "TF family")
