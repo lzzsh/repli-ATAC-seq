@@ -74,30 +74,28 @@ colnames(peaks_reads) <- c("chr","start","end","RT")
 feature_RT <- feature_RT %>%
   arrange(across(everything()))
 
-number_peaks_ES <- length(which(peaks_reads$RT == "ES"))
-number_peaks_EMS <- length(which(peaks_reads$RT == "ESMS"))
-number_peaks_MS <- length(which(peaks_reads$RT == "MS"))
-number_peaks_MLS <- length(which(peaks_reads$RT == "MSLS"))
-number_peaks_LS <- length(which(peaks_reads$RT == "LS"))
-
-total_number <- number_peaks_ES + number_peaks_EMS + number_peaks_MS + number_peaks_MLS +
-  number_peaks_LS 
+# Calculate RT frequency based on genomic length (same as Figure 2B and 2CD)
+RT_freq_genome <- peaks_reads %>% group_by(RT) %>%
+  summarise(Sum = sum(end) - sum(start)) %>%
+  filter(!(RT %in% c("ESLS","ESMSLS"))) %>%
+  mutate(percent = Sum/sum(Sum), 
+         RT = factor(RT, levels = c("ES", "ESMS", "MS","MSLS","LS")))
 
 feature_RT_freq <- as.data.frame(table(feature_RT$feature,feature_RT$RT))
 colnames(feature_RT_freq)[1:2] <- c("feature","RT")
 
-# normalization
-RT_freq <- feature_RT_freq %>% group_by(feature)%>%
-  summarise(percent = Freq/sum(Freq), RT = RT )
+# Calculate feature frequency
+feature_freq <- feature_RT_freq %>% group_by(feature) %>%
+  summarise(percent = Freq / sum(Freq), RT = RT)
+
+# Normalization (same method as Figure 2B and 2CD)
+RT_freq <- merge(feature_freq, RT_freq_genome, by = "RT") %>%
+  dplyr::select(1,2,3,5) %>%
+  mutate(percent.fix = percent.x / percent.y)  # Normalize by RT frequency
 
 RT_freq$RT = factor(RT_freq$RT,levels = c("ES","ESMS","MS","MSLS","LS"))
 RT_freq <- RT_freq %>%
-  filter(!is.na(RT)) %>%
-  mutate(percent.fix = case_when(RT == "ES" ~ percent * total_number /number_peaks_ES,
-                                 RT == "ESMS" ~ percent * total_number /number_peaks_EMS,
-                                 RT == "MS" ~ percent * total_number /number_peaks_MS,
-                                 RT == "MSLS" ~ percent * total_number /number_peaks_MLS,
-                                 RT == "LS" ~ percent * total_number /number_peaks_LS))
+  filter(!is.na(RT))
 
 # plot
 Figure2A <- RT_freq %>%
@@ -105,6 +103,6 @@ Figure2A <- RT_freq %>%
   geom_bar( stat = "identity",colour = "black",position = "dodge")+
   scale_fill_manual(values=c(ES = "#2C5F9E", ESMS = "#68A0D8", MS = "#95BE6C", MSLS = "#E4B660", LS = "#E68364", ESLS = "#B784A7", ESMSLS = "#9B7EB3"))+
   theme_classic() +ggtitle("Replication Times for Chromatin-Related Features")+theme(plot.title = element_text(hjust = 0.5))+
-  xlab("Feature")+ylab("Segment coverage")
+  xlab("Feature")+ylab("% of RT class with feature")
 Figure2A
 # ggsave("~/Documents/Github/repli-ATAC-seq/output/Figures/Figure2A.pdf", Figure2A , width = 8, height = 5)
