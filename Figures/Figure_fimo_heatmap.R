@@ -178,7 +178,7 @@ ht_q <- Heatmap(
   col = col_fun_q,
   na_col = "grey90",
   cluster_rows = FALSE,                 # 行=period，通常不聚类
-  cluster_columns = TRUE,               # 列=TF，可聚类
+  cluster_columns = FALSE,               # 列=TF，可聚类
   column_split = col_fam_factor,        # << 按家族分列分片
   cluster_column_slices = TRUE,
   gap = grid::unit(2, "mm"),
@@ -203,11 +203,11 @@ ht_e <- Heatmap(
   col = col_fun_e,
   na_col = "grey90",
   cluster_rows = FALSE,
-  cluster_columns = TRUE,
+  cluster_columns = FALSE,
   column_split = col_fam_factor,
   cluster_column_slices = TRUE,
   gap = grid::unit(2, "mm"),
-  top_annotation = HeatmapAnnotation(
+  bottom_annotation = HeatmapAnnotation(
     Family = col_fam_factor,
     col = list(Family = col_family_cols),
     annotation_legend_param = list(title = "TF family")
@@ -263,7 +263,7 @@ if (sum(!is.na(filtered_log2rr)) == 0) {
       column_split = filtered_fam_factor,
       cluster_column_slices = FALSE,
       gap = grid::unit(2, "mm"),
-      top_annotation = HeatmapAnnotation(
+      bottom_annotation = HeatmapAnnotation(
         Family = filtered_fam_factor,
         col = list(Family = family_colors[levels(filtered_fam_factor)]),  ## 只使用筛选后存在的家族颜色
         annotation_legend_param = list(title = "TF family")
