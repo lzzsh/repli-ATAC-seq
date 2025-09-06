@@ -3,8 +3,8 @@ library(dplyr)
 setwd("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-seq-CR/heatmap/")
 
 all <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/reference/ZH11_RT_all_org.gff3")
-sol1 <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/fimo/meme/SOL1_overlap_peak.bed")
-tcx2 <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/fimo/meme/TCX2_overlap_peak.bed")
+sol1 <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/cuttag_tcx/macs2/macs2_p1e-5/sol_cut_out/SOL1_overlap_peak.bed")
+tcx2 <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/cuttag_tcx/macs2/macs2_p1e-5/tcx_cut_out/TCX2_overlap_peak.bed")
 
 save_stage_regions <- function(df, label, stages = c("ES", "MS", "LS")) {
   for (stage in stages) {
