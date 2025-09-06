@@ -9,10 +9,10 @@ library(limma)
 setwd("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-seq-CR/segmentation/")
 
 # 设置 motif 的复制时期（用于筛选 motif 匹配）
-stage <- "LS"  # 可选 ES / MS / LS
+stage <- "ES"  # 可选 ES / MS / LS
 
 # 设置信号比较的阶段（绘图中比较 WT vs mutant 的复制信号）
-signal_compare_stage <- "ES"  # 可选 ES / MS / LS
+signal_compare_stage <- "LS"  # 可选 ES / MS / LS
 
 # 读取原始数据
 count_matrix <- read.table("./repli_peaks_quan_peak.txt")
@@ -41,11 +41,11 @@ count_matrix <- normalize_tpm(count_matrix)
 rownames(count_matrix) <- paste(count_matrix$chr, count_matrix$start, count_matrix$end)
 
 # 读入 motif 文件（只保留指定阶段的 overlap peak）
-sol1 <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/fimo/meme/SOL1_overlap_peak.bed") %>%
+sol1 <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/cuttag_tcx/macs2/macs2_p1e-5/sol_cut_out/SOL1_overlap_peak.bed") %>%
   filter(V4 == stage)
 colnames(sol1)[1:3] <- c("chr","start","end")
 
-tcx2 <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/fimo/meme/TCX2_overlap_peak.bed") %>%
+tcx2 <- read.table("/storage2/liuxiaodongLab/liaozizhuo/Projects/cuttag_tcx/macs2/macs2_p1e-5/tcx_cut_out/TCX2_overlap_peak.bed") %>%
   filter(V4 == stage)
 colnames(tcx2)[1:3] <- c("chr","start","end")
 
@@ -143,7 +143,7 @@ plot_scatter_all <- function(motif_name, motif_col = NULL) {
 for (motif in names(motif_list)) {
   motif_col <- motif_list[[motif]]
   p_list <- plot_scatter_all(motif, motif_col)
-  pdf(paste0("scatter_all_", motif, "_motif_", stage, "_compare_", signal_compare_stage, ".pdf"), width = 11, height = 8)
+  pdf(paste0("scatter_all_", motif, "real_motif_", stage, "_compare_", signal_compare_stage, ".pdf"), width = 11, height = 8)
   grid.arrange(grobs = p_list, ncol = 2)
   dev.off()
 }
