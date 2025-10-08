@@ -25,10 +25,3 @@ computeMatrix reference-point  -b 2000 -a 2000 -R /storage2/liuxiaodongLab/liaoz
 plotProfile -m matrix_all_peaks_TCX2_3.gz  -out TSS_profile_all_peaks_TCX2_3.pdf  --refPointLabel peak --regionsLabel ES MS LS --outFileSortedRegions location_all_peaks_TCX2_3.bed --plotFileFormat pdf --perGroup
 plotHeatmap -m matrix_all_peaks_TCX2_3.gz  -out TSS_heatmap_all_peaks_TCX2_3.pdf  --refPointLabel peak --regionsLabel ES MS LS --outFileSortedRegions location_all_peaks_TCX2_3.bed --plotFileFormat pdf --perGroup \
 --samplesLabel signal_G1 signal_ES signal_MS signal_LS --heatmapHeight 20 --heatmapWidth 5 --colorMap OrRd 
-
-
-
-
-
-
-## TCX2-1 CR
