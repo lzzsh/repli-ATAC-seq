@@ -11,10 +11,10 @@
 
 module load samtools/1.13
 
-cd /storage/liuxiaodongLab/liaozizhuo/Projects/repli-ATAC-seq/bwa_all_rawdata
+cd /storage2/liuxiaodongLab/liaozizhuo/Projects/ATAC-seq-CR-2/bwa_all_rawdata
 
 for file in $(ls *_rmor.bam);do
 	prefix=${file%\.*}
-	samtools view -bq 30 ${file} | samtools view -bF 4 > ${prefix}_q30.bam 
+	samtools view -bq 30 ${file} | samtools view -bF 4 -F 256 > ${prefix}_q30.bam 
 	sleep 1
 done
