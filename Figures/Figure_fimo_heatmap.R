@@ -334,5 +334,3 @@ write.table(data.frame(TF = rownames(log2rr_mat), log2rr_mat),
             file = "TF_phase_log2RR.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
 write.table(pref_tbl, file = "TF_preferred_phase.tsv",
             sep = "\t", quote = FALSE, row.names = FALSE)
-
-message("完成：旋转版热图已生成，并导出 TF_phase_log10P.tsv / TF_phase_log10Q.tsv / TF_phase_log2RR.tsv / TF_preferred_phase.tsv\n筛选后热图已保存为 heatmap_filtered_significant.pdf")
