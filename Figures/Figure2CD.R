@@ -17,10 +17,10 @@ gene_rpkm <- merge(TSS_RT,gene_data,by=c("chrom","start","end","strand"), all.x=
 gene_rpkm <- gene_rpkm %>%
   arrange(across(everything()))
 
-rpkm <- read.table("~/Desktop/Rfiles/peak_unit/NIP_rep1_rep2_FPKM.featureCounts.matrix", header = T, skip = 185)
-colnames(rpkm) <- c("Geneid","NIP_rep1","FPKM","NIP_rep2","FPKM.1")
-rpkm <- rpkm[,c(1,3,5)]
-rpkm$FPKM_average <- (rpkm$FPKM + rpkm$FPKM.1) / 2
+rpkm <- read.csv("~/Desktop/Rfiles/peak_unit/gene_tpm_matrix.csv", header = T)
+rpkm <- rpkm[,c(1,3,4)]
+colnames(rpkm) <- c("Geneid","NIP_rep1","NIP_rep2")
+rpkm$FPKM_average <- (rpkm$NIP_rep1 + rpkm$NIP_rep2) / 2
 
 gene_rpkm<-merge(gene_rpkm[,-8],rpkm,by="Geneid")
 gene_rpkm[,10]=0
@@ -45,7 +45,7 @@ rpkm_table<-as.data.frame(table(gene_rpkm[,10],gene_rpkm[,6]))
 colnames(rpkm_table)<-c("RPKM","RT","FREQ")
 rpkm_table1<-rpkm_table %>% group_by(RPKM)%>%
   summarise(Sum = sum(FREQ))
-RPKM_plot<-merge(rpkm_table,rpkm_table1,by="RPKM")
+RPKM_plot<-merge(rpkm_table,rpkm_table1,by="RPKM") 
 RPKM_plot$Ratio<-RPKM_plot[,3]/RPKM_plot[,4]*100
 RPKM_plot<-RPKM_plot[which(RPKM_plot[,2]!="ESLS" & RPKM_plot[,2]!="ESMSLS"),]
 RPKM_plot$RT = factor(RPKM_plot$RT,levels = c("ES", "ESMS", "MS","MSLS","LS"))
