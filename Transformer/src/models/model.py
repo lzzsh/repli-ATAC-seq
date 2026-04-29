@@ -12,6 +12,13 @@ def _precompute_freqs_cis(dim: int, seq_len: int, theta: float = 10000.0) -> tor
     return torch.polar(torch.ones_like(freqs), freqs)  # complex64
 
 
+def _apply_rope(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+    # x: [B, L, n_heads, head_dim]  freqs_cis: [L, head_dim//2]  (complex)
+    x_ = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
+    x_rot = torch.view_as_real(x_ * freqs_cis.unsqueeze(0).unsqueeze(2)).flatten(3)
+    return x_rot.type_as(x)
+
+
 # ── Attention Pooling ─────────────────────────────────────────────────────────
 class AttentionPooling(nn.Module):
     def __init__(self, d_model: int):
@@ -36,17 +43,37 @@ def _head(d_model: int, out_dim: int, hidden: int, dropout: float) -> nn.Sequent
 class _EncoderLayer(nn.Module):
     def __init__(self, d_model: int, n_heads: int, dim_ff: int, dropout: float, attn_dropout: float):
         super().__init__()
+        assert d_model % n_heads == 0
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        self.scale = self.head_dim ** -0.5
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
-        self.attn = nn.MultiheadAttention(d_model, n_heads, dropout=attn_dropout, batch_first=True)
+        self.q_proj = nn.Linear(d_model, d_model, bias=False)
+        self.k_proj = nn.Linear(d_model, d_model, bias=False)
+        self.v_proj = nn.Linear(d_model, d_model, bias=False)
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+        self.attn_drop = nn.Dropout(attn_dropout)
         self.ff = nn.Sequential(
             nn.Linear(d_model, dim_ff), nn.GELU(), nn.Dropout(dropout),
             nn.Linear(dim_ff, d_model), nn.Dropout(dropout),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+        B, L, D = x.shape
         h = self.norm1(x)
-        x = x + self.attn(h, h, h)[0]
+        q = self.q_proj(h).view(B, L, self.n_heads, self.head_dim)
+        k = self.k_proj(h).view(B, L, self.n_heads, self.head_dim)
+        v = self.v_proj(h).view(B, L, self.n_heads, self.head_dim)
+        q = _apply_rope(q, freqs_cis)
+        k = _apply_rope(k, freqs_cis)
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+        attn = torch.softmax((q @ k.transpose(-2, -1)) * self.scale, dim=-1)
+        attn = self.attn_drop(attn)
+        out = (attn @ v).transpose(1, 2).reshape(B, L, D)
+        x = x + self.out_proj(out)
         return x + self.ff(self.norm2(x))
 
 
@@ -82,7 +109,7 @@ class DNATransformer(nn.Module):
         self.class_head = _head(d_model, 3, head_hidden_dim, head_dropout)   # E/M/L logits
         self.register_buffer(
             "freqs_cis",
-            _precompute_freqs_cis(tok_dim // n_heads, max_seq_len),
+            _precompute_freqs_cis(d_model // n_heads, max_seq_len),
             persistent=False,
         )
 
@@ -91,8 +118,9 @@ class DNATransformer(nn.Module):
         tok = self.token_emb(input_ids)
         sp = self.species_emb(species_id).unsqueeze(1).expand(B, L, -1)
         x = self.input_proj(torch.cat([tok, sp], dim=-1))
+        freqs_cis = self.freqs_cis[:L]
         for layer in self.layers:
-            x = layer(x)
+            x = layer(x, freqs_cis)
         x = self.norm(x)
         if return_attn_weights:
             pooled, attn_w = self.pooling(x, return_weights=True)
