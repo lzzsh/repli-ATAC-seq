@@ -1,19 +1,7 @@
 species:
   - name: rice
-    fasta: data/genomes/rice/IRGSP-1.0.fa
+    fasta: /Users/lzz/Desktop/repli-ATAC-seq/reference_genome/rice_all_genomes_v7.fasta
     count_tsv: data/labels/rice_wt_counts.tsv
-    train_chroms: [chr1, chr2, chr3, chr4, chr5, chr6, chr7, chr8]
-    val_chroms: [chr9, chr10]
+    train_chroms: [chr01, chr02, chr03, chr04, chr05, chr06, chr07, chr08]
+    val_chroms: [chr09, chr10]
     test_chroms: [chr11, chr12]
-  - name: maize
-    fasta: data/genomes/maize/Zm-B73-REFERENCE-NAM-5.0.fa
-    count_tsv: data/labels/maize_wt_counts.tsv
-    train_chroms: [chr1, chr2, chr3, chr4, chr5, chr6, chr7]
-    val_chroms: [chr8]
-    test_chroms: [chr9, chr10]
-  - name: arabidopsis
-    fasta: data/genomes/arabidopsis/TAIR10.fa
-    count_tsv: data/labels/arabidopsis_wt_counts.tsv
-    train_chroms: [chr1, chr2, chr3]
-    val_chroms: [chr4]
-    test_chroms: [chr5]
