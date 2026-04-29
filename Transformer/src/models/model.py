@@ -39,9 +39,21 @@ def _head(d_model: int, out_dim: int, hidden: int, dropout: float) -> nn.Sequent
     )
 
 
+# ── FiLM Conditioning ─────────────────────────────────────────────────────────
+class _FiLM(nn.Module):
+    def __init__(self, cond_dim: int, d_model: int):
+        super().__init__()
+        self.proj = nn.Linear(cond_dim, 2 * d_model)
+
+    def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+        # x: [B, L, d_model]  cond: [B, cond_dim]
+        gamma, beta = self.proj(cond).chunk(2, dim=-1)  # each [B, d_model]
+        return (1 + gamma.unsqueeze(1)) * x + beta.unsqueeze(1)
+
+
 # ── Encoder Layer (pre-norm) ──────────────────────────────────────────────────
 class _EncoderLayer(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, dim_ff: int, dropout: float, attn_dropout: float):
+    def __init__(self, d_model: int, n_heads: int, dim_ff: int, dropout: float, attn_dropout: float, species_emb_dim: int):
         super().__init__()
         assert d_model % n_heads == 0
         self.n_heads = n_heads
@@ -50,6 +62,8 @@ class _EncoderLayer(nn.Module):
         self.scale = self.head_dim ** -0.5
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
+        self.film1 = _FiLM(species_emb_dim, d_model)
+        self.film2 = _FiLM(species_emb_dim, d_model)
         self.q_proj = nn.Linear(d_model, d_model, bias=False)
         self.k_proj = nn.Linear(d_model, d_model, bias=False)
         self.v_proj = nn.Linear(d_model, d_model, bias=False)
@@ -60,9 +74,9 @@ class _EncoderLayer(nn.Module):
             nn.Linear(dim_ff, d_model), nn.Dropout(dropout),
         )
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor, key_padding_mask: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor, species_emb: torch.Tensor, key_padding_mask: torch.Tensor | None = None) -> torch.Tensor:
         B, L, D = x.shape
-        h = self.norm1(x)
+        h = self.film1(self.norm1(x), species_emb)
         q = self.q_proj(h).view(B, L, self.n_heads, self.head_dim)
         k = self.k_proj(h).view(B, L, self.n_heads, self.head_dim)
         v = self.v_proj(h).view(B, L, self.n_heads, self.head_dim)
@@ -71,15 +85,14 @@ class _EncoderLayer(nn.Module):
         q = q.transpose(1, 2)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
-        scores = (q @ k.transpose(-2, -1)) * self.scale  # [B, n_heads, L, L]
+        scores = (q @ k.transpose(-2, -1)) * self.scale
         if key_padding_mask is not None:
-            # key_padding_mask: [B, L], True = padding position
             scores = scores.masked_fill(key_padding_mask[:, None, None, :], float("-inf"))
         attn = torch.softmax(scores, dim=-1)
         attn = self.attn_drop(attn)
         out = (attn @ v).transpose(1, 2).reshape(B, L, D)
         x = x + self.out_proj(out)
-        return x + self.ff(self.norm2(x))
+        return x + self.ff(self.film2(self.norm2(x), species_emb))
 
 
 # ── DNATransformer ────────────────────────────────────────────────────────────
