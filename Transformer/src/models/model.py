@@ -44,6 +44,8 @@ class _FiLM(nn.Module):
     def __init__(self, cond_dim: int, d_model: int):
         super().__init__()
         self.proj = nn.Linear(cond_dim, 2 * d_model)
+        nn.init.zeros_(self.proj.weight)
+        nn.init.zeros_(self.proj.bias)
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         # x: [B, L, d_model]  cond: [B, cond_dim]
