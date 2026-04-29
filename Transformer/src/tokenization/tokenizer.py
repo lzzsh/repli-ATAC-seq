@@ -1,6 +1,7 @@
 from itertools import product
 
 _COMP = {"A": "T", "T": "A", "C": "G", "G": "C"}
+_VALID = frozenset("ACGT")
 
 
 def _rc_kmer(kmer: str) -> str:
@@ -40,7 +41,7 @@ class KmerTokenizer:
         tokens = [self.cls_id] if self.add_cls else []
         for i in range(0, len(seq) - self.k + 1, self.stride):
             kmer = seq[i: i + self.k]
-            if "N" in kmer:
+            if not _VALID.issuperset(kmer):
                 tokens.append(self.unk_id)
             else:
                 tokens.append(self.vocab.get(min(kmer, _rc_kmer(kmer)), self.unk_id))
