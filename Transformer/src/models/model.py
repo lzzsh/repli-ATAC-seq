@@ -115,18 +115,16 @@ class DNATransformer(nn.Module):
         max_seq_len: int = 2800,
     ):
         super().__init__()
-        tok_dim = d_model - species_emb_dim
-        self.token_emb = nn.Embedding(vocab_size, tok_dim, padding_idx=0)
+        self.token_emb = nn.Embedding(vocab_size, d_model, padding_idx=0)
         self.species_emb = nn.Embedding(n_species, species_emb_dim)
-        self.input_proj = nn.Linear(d_model, d_model)
         self.layers = nn.ModuleList([
-            _EncoderLayer(d_model, n_heads, dim_feedforward, dropout, attn_dropout)
+            _EncoderLayer(d_model, n_heads, dim_feedforward, dropout, attn_dropout, species_emb_dim)
             for _ in range(n_layers)
         ])
         self.norm = nn.LayerNorm(d_model)
         self.pooling = AttentionPooling(d_model)
-        self.phase_head = _head(d_model, 3, head_hidden_dim, head_dropout)   # ES/MS/LS
-        self.class_head = _head(d_model, 3, head_hidden_dim, head_dropout)   # E/M/L logits
+        self.phase_head = _head(d_model, 3, head_hidden_dim, head_dropout)
+        self.class_head = _head(d_model, 3, head_hidden_dim, head_dropout)
         self.register_buffer(
             "freqs_cis",
             _precompute_freqs_cis(d_model // n_heads, max_seq_len),
@@ -135,12 +133,11 @@ class DNATransformer(nn.Module):
 
     def forward(self, input_ids: torch.Tensor, species_id: torch.Tensor, key_padding_mask: torch.Tensor | None = None, return_attn_weights: bool = False):
         B, L = input_ids.shape
-        tok = self.token_emb(input_ids)
-        sp = self.species_emb(species_id).unsqueeze(1).expand(B, L, -1)
-        x = self.input_proj(torch.cat([tok, sp], dim=-1))
+        x = self.token_emb(input_ids)                 # [B, L, d_model]
+        sp = self.species_emb(species_id)             # [B, species_emb_dim]
         freqs_cis = self.freqs_cis[:L]
         for layer in self.layers:
-            x = layer(x, freqs_cis, key_padding_mask)
+            x = layer(x, freqs_cis, sp, key_padding_mask)
         x = self.norm(x)
         if return_attn_weights:
             pooled, attn_w = self.pooling(x, return_weights=True)
