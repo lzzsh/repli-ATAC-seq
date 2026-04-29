@@ -46,6 +46,7 @@ class _EncoderLayer(nn.Module):
         assert d_model % n_heads == 0
         self.n_heads = n_heads
         self.head_dim = d_model // n_heads
+        assert self.head_dim % 2 == 0, "head_dim must be even for RoPE"
         self.scale = self.head_dim ** -0.5
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
@@ -59,7 +60,7 @@ class _EncoderLayer(nn.Module):
             nn.Linear(dim_ff, d_model), nn.Dropout(dropout),
         )
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor, key_padding_mask: torch.Tensor | None = None) -> torch.Tensor:
         B, L, D = x.shape
         h = self.norm1(x)
         q = self.q_proj(h).view(B, L, self.n_heads, self.head_dim)
@@ -70,7 +71,11 @@ class _EncoderLayer(nn.Module):
         q = q.transpose(1, 2)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
-        attn = torch.softmax((q @ k.transpose(-2, -1)) * self.scale, dim=-1)
+        scores = (q @ k.transpose(-2, -1)) * self.scale  # [B, n_heads, L, L]
+        if key_padding_mask is not None:
+            # key_padding_mask: [B, L], True = padding position
+            scores = scores.masked_fill(key_padding_mask[:, None, None, :], float("-inf"))
+        attn = torch.softmax(scores, dim=-1)
         attn = self.attn_drop(attn)
         out = (attn @ v).transpose(1, 2).reshape(B, L, D)
         x = x + self.out_proj(out)
@@ -113,14 +118,14 @@ class DNATransformer(nn.Module):
             persistent=False,
         )
 
-    def forward(self, input_ids: torch.Tensor, species_id: torch.Tensor, return_attn_weights: bool = False):
+    def forward(self, input_ids: torch.Tensor, species_id: torch.Tensor, key_padding_mask: torch.Tensor | None = None, return_attn_weights: bool = False):
         B, L = input_ids.shape
         tok = self.token_emb(input_ids)
         sp = self.species_emb(species_id).unsqueeze(1).expand(B, L, -1)
         x = self.input_proj(torch.cat([tok, sp], dim=-1))
         freqs_cis = self.freqs_cis[:L]
         for layer in self.layers:
-            x = layer(x, freqs_cis)
+            x = layer(x, freqs_cis, key_padding_mask)
         x = self.norm(x)
         if return_attn_weights:
             pooled, attn_w = self.pooling(x, return_weights=True)
