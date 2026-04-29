@@ -1,0 +1,43 @@
+output_dir: outputs/transformer_wt
+log_dir: logs
+
+data:
+  manifest: data/manifest.yaml
+  input_window_length: 8192
+
+tokenizer:
+  k: 6
+  stride: 3
+  add_cls_token: true
+
+augmentation:
+  rc_prob: 0.5
+
+model:
+  d_model: 256
+  n_layers: 6
+  n_heads: 8
+  dim_feedforward: 1024
+  dropout: 0.1
+  attention_dropout: 0.1
+  species_embedding_dim: 64
+  head_hidden_dim: 128
+  head_dropout: 0.1
+
+loss:
+  lambda_phase: 1.0
+  lambda_class: 0.5
+
+training:
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  batch_size: 16
+  gradient_accumulation_steps: 4
+  max_epochs: 100
+  early_stopping_patience: 10
+  gradient_clip_norm: 1.0
+  mixed_precision: true
+  warmup_steps: 1000
+  min_lr: 1.0e-6
+  eval_every_n_steps: 500
+  seed: 42
