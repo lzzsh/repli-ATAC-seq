@@ -14,7 +14,7 @@ augmentation:
   rc_prob: 0.5
 
 model:
-  # conv_stem halves sequence length: ~4095 tokens (stride=2) → ~2047 tokens
+  # conv tower (3-layer, 8x downsample): ~4095 tokens (stride=2) → ~512 tokens
   d_model: 256
   n_layers: 6
   n_heads: 8
