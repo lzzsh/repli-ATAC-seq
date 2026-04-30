@@ -37,11 +37,21 @@ class _SharedHead(nn.Module):
         super().__init__()
         self.shared = nn.Sequential(nn.Linear(d_model, hidden), nn.GELU(), nn.Dropout(dropout))
         self.phase_out = nn.Linear(hidden, 3)
-        self.class_out = nn.Linear(hidden, 3)
+        # class logits derived from phase via WRT: no separate class_out
 
     def forward(self, x: torch.Tensor):
         h = self.shared(x)
-        return self.phase_out(h), self.class_out(h)
+        phase = F.softplus(self.phase_out(h))   # non-negative log1p TPM
+        # WRT = (0.5*MS + LS) / (ES + MS + LS + eps), then threshold → E/M/L logits
+        eps = 1e-6
+        es, ms, ls = phase[:, 0], phase[:, 1], phase[:, 2]
+        wrt = (0.5 * ms + ls) / (es + ms + ls + eps)   # [B]
+        # soft logits: distance from thresholds 1/3 and 2/3
+        e_logit = (1/3 - wrt) * 10
+        l_logit = (wrt - 2/3) * 10
+        m_logit = -torch.abs(wrt - 0.5) * 10
+        class_logits = torch.stack([e_logit, m_logit, l_logit], dim=-1)  # [B, 3]
+        return phase, class_logits
 
 
 # ── Conv Stem ─────────────────────────────────────────────────────────────────
@@ -141,7 +151,7 @@ class DNATransformer(nn.Module):
         species_emb_dim: int = 64,
         head_hidden_dim: int = 128,
         head_dropout: float = 0.1,
-        max_seq_len: int = 2800,
+        max_seq_len: int = 4200,
     ):
         super().__init__()
         self.max_seq_len = max_seq_len
