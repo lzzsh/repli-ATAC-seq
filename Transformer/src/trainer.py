@@ -28,23 +28,34 @@ def _build_class_weights(dataset: RepliSeqDataset) -> torch.Tensor:
     return torch.tensor(w / w.sum() * 3, dtype=torch.float32)
 
 
-def _validate(model, loader, device) -> dict:
+def _validate(model, loader, criterion, device) -> dict:
     model.eval()
     pp, pt, wt, cp, ct = [], [], [], [], []
+    total_loss = phase_loss = class_loss = 0.0
+    n_batches = 0
     with torch.no_grad():
         for batch in loader:
             batch = {k: v.to(device) for k, v in batch.items()}
             out = model.module.forward(batch["input_ids"], batch["species_id"]) \
                 if isinstance(model, DDP) else model(batch["input_ids"], batch["species_id"])
+            losses = criterion(out, batch)
+            total_loss += losses["total"].item()
+            phase_loss += losses["phase"].item()
+            class_loss += losses["class"].item()
+            n_batches += 1
             pp.append(out["phase_pred"].cpu().numpy())
             pt.append(batch["phase_labels"].cpu().numpy())
             wt.append(batch["wrt"].cpu().numpy())
             cp.append(out["class_logits"].argmax(-1).cpu().numpy())
             ct.append(batch["rt_class"].cpu().numpy())
-    return evaluate_predictions(
+    metrics = evaluate_predictions(
         np.concatenate(pp), np.concatenate(pt),
         np.concatenate(wt), np.concatenate(cp), np.concatenate(ct),
     )
+    metrics["val_loss_total"] = total_loss / n_batches
+    metrics["val_loss_phase"] = phase_loss / n_batches
+    metrics["val_loss_class"] = class_loss / n_batches
+    return metrics
 
 
 def train(config_path: str):
@@ -152,12 +163,18 @@ def train(config_path: str):
             train_sampler.set_epoch(epoch)
         model.train()
         optimizer.zero_grad()
+        epoch_loss_total = epoch_loss_phase = epoch_loss_class = 0.0
+        epoch_batches = 0
         for batch in (tqdm(train_loader, desc=f"Epoch {epoch+1}") if is_master else train_loader):
             batch = {k: v.to(device) for k, v in batch.items()}
             with autocast(enabled=cfg["training"]["mixed_precision"]):
                 out = model(batch["input_ids"], batch["species_id"])
                 losses = criterion(out, batch)
             scaler.scale(losses["total"] / accum).backward()
+            epoch_loss_total += losses["total"].item()
+            epoch_loss_phase += losses["phase"].item()
+            epoch_loss_class += losses["class"].item()
+            epoch_batches += 1
             global_step += 1
             if global_step % accum == 0:
                 scaler.unscale_(optimizer)
@@ -166,21 +183,33 @@ def train(config_path: str):
                 scaler.update()
                 optimizer.zero_grad()
                 scheduler.step()
-                if is_master:
-                    writer.add_scalar("train/loss_total", losses["total"].item(), global_step)
-                    writer.add_scalar("train/loss_phase", losses["phase"].item(), global_step)
-                    writer.add_scalar("train/loss_class", losses["class"].item(), global_step)
-                    writer.add_scalar("train/lr", scheduler.get_last_lr()[0], global_step)
 
         # end of epoch validation
         should_stop = torch.tensor(0, device=device)
         if is_master:
-            metrics = _validate(model, val_loader, device)
-            score = metrics["mean_phase_pearson"] + metrics["wrt_spearman"] + metrics["macro_f1"]
-            logger.info(f"epoch={epoch+1} step={global_step} val_score={score:.4f} wrt_spearman={metrics['wrt_spearman']:.4f}")
+            train_loss_total = epoch_loss_total / epoch_batches
+            train_loss_phase = epoch_loss_phase / epoch_batches
+            train_loss_class = epoch_loss_class / epoch_batches
+            writer.add_scalar("train/loss_total", train_loss_total, epoch + 1)
+            writer.add_scalar("train/loss_phase", train_loss_phase, epoch + 1)
+            writer.add_scalar("train/loss_class", train_loss_class, epoch + 1)
+            writer.add_scalar("train/lr", scheduler.get_last_lr()[0], epoch + 1)
+
+            metrics = _validate(model, val_loader, criterion, device)
+            score = -metrics["val_loss_total"]
+            writer.add_scalar("val/loss_total", metrics["val_loss_total"], epoch + 1)
+            writer.add_scalar("val/loss_phase", metrics["val_loss_phase"], epoch + 1)
+            writer.add_scalar("val/loss_class", metrics["val_loss_class"], epoch + 1)
             for k, v in metrics.items():
-                if isinstance(v, float):
+                if isinstance(v, float) and not k.startswith("val_loss"):
                     writer.add_scalar(f"val/{k}", v, epoch + 1)
+            logger.info(
+                f"epoch={epoch+1} "
+                f"train_loss={train_loss_total:.4f} "
+                f"val_loss={metrics['val_loss_total']:.4f} "
+                f"val_phase={metrics['val_loss_phase']:.4f} "
+                f"val_class={metrics['val_loss_class']:.4f}"
+            )
             if score > best_score:
                 best_score = score
                 patience = 0
