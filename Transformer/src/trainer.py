@@ -115,6 +115,7 @@ def train(config_path: str):
         species_emb_dim=cfg["model"]["species_embedding_dim"],
         head_hidden_dim=cfg["model"]["head_hidden_dim"],
         head_dropout=cfg["model"]["head_dropout"],
+        max_seq_len=cfg["data"]["input_window_length"],
     ).to(device)
 
     if ddp:

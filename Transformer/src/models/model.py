@@ -174,7 +174,7 @@ class DNATransformer(nn.Module):
         species_emb_dim: int = 64,
         head_hidden_dim: int = 128,
         head_dropout: float = 0.1,
-        max_seq_len: int = 66000,
+        max_seq_len: int = 131072,
     ):
         super().__init__()
         self.max_seq_len = max_seq_len
