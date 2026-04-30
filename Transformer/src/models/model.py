@@ -53,13 +53,13 @@ class _ConvStem(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, L, d_model]
         x = x.transpose(1, 2)                          # [B, d_model, L]
-        x = self.act(self.conv1(x))
+        x = self.conv1(x)
         x = x.transpose(1, 2)                          # [B, L, d_model]
-        x = self.drop(self.norm1(x))
+        x = self.drop(self.act(self.norm1(x)))
         x = x.transpose(1, 2)                          # [B, d_model, L]
-        x = self.act(self.conv2(x))
-        x = x.transpose(1, 2)                          # [B, L//2, d_model]
-        x = self.drop(self.norm2(x))
+        x = self.conv2(x)
+        x = x.transpose(1, 2)                          # [B, L//2, d_model] (even L)
+        x = self.drop(self.act(self.norm2(x)))
         return x
 
 
