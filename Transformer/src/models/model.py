@@ -32,11 +32,16 @@ class AttentionPooling(nn.Module):
 
 
 # ── Prediction Heads ──────────────────────────────────────────────────────────
-def _head(d_model: int, out_dim: int, hidden: int, dropout: float) -> nn.Sequential:
-    return nn.Sequential(
-        nn.Linear(d_model, hidden), nn.GELU(), nn.Dropout(dropout),
-        nn.Linear(hidden, out_dim),
-    )
+class _SharedHead(nn.Module):
+    def __init__(self, d_model: int, hidden: int, dropout: float):
+        super().__init__()
+        self.shared = nn.Sequential(nn.Linear(d_model, hidden), nn.GELU(), nn.Dropout(dropout))
+        self.phase_out = nn.Linear(hidden, 3)
+        self.class_out = nn.Linear(hidden, 3)
+
+    def forward(self, x: torch.Tensor):
+        h = self.shared(x)
+        return self.phase_out(h), self.class_out(h)
 
 
 # ── Conv Stem ─────────────────────────────────────────────────────────────────
@@ -149,8 +154,7 @@ class DNATransformer(nn.Module):
         ])
         self.norm = nn.LayerNorm(d_model)
         self.pooling = AttentionPooling(d_model)
-        self.phase_head = _head(d_model, 3, head_hidden_dim, head_dropout)
-        self.class_head = _head(d_model, 3, head_hidden_dim, head_dropout)
+        self.head = _SharedHead(d_model, head_hidden_dim, head_dropout)
         self.register_buffer(
             "freqs_cis",
             _precompute_freqs_cis(d_model // n_heads, max_seq_len // 2 + 1),
@@ -175,9 +179,10 @@ class DNATransformer(nn.Module):
             pooled, attn_w = self.pooling(x, return_weights=True)
         else:
             pooled, attn_w = self.pooling(x), None
+        phase_pred, class_logits = self.head(pooled)
         return {
-            "phase_pred": self.phase_head(pooled),
-            "class_logits": self.class_head(pooled),
+            "phase_pred": phase_pred,
+            "class_logits": class_logits,
             "attn_weights": attn_w,
         }
 
