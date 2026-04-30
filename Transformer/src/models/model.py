@@ -140,6 +140,7 @@ class DNATransformer(nn.Module):
     ):
         super().__init__()
         self.token_emb = nn.Embedding(vocab_size, d_model, padding_idx=0)
+        self.conv_stem = _ConvStem(d_model, dropout)
         self.species_emb = nn.Embedding(n_species, species_emb_dim)
         self.layers = nn.ModuleList([
             _EncoderLayer(d_model, n_heads, dim_feedforward, dropout, attn_dropout, species_emb_dim)
@@ -151,15 +152,19 @@ class DNATransformer(nn.Module):
         self.class_head = _head(d_model, 3, head_hidden_dim, head_dropout)
         self.register_buffer(
             "freqs_cis",
-            _precompute_freqs_cis(d_model // n_heads, max_seq_len),
+            _precompute_freqs_cis(d_model // n_heads, max_seq_len // 2 + 1),
             persistent=False,
         )
 
     def forward(self, input_ids: torch.Tensor, species_id: torch.Tensor, key_padding_mask: torch.Tensor | None = None, return_attn_weights: bool = False):
         B, L = input_ids.shape
         x = self.token_emb(input_ids)                 # [B, L, d_model]
+        x = self.conv_stem(x)                         # [B, L//2, d_model]
+        L2 = x.shape[1]
         sp = self.species_emb(species_id)             # [B, species_emb_dim]
-        freqs_cis = self.freqs_cis[:L]
+        freqs_cis = self.freqs_cis[:L2]
+        if key_padding_mask is not None:
+            key_padding_mask = key_padding_mask[:, ::2][:, :L2]
         for layer in self.layers:
             x = layer(x, freqs_cis, sp, key_padding_mask)
         x = self.norm(x)
