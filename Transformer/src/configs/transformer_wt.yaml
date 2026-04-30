@@ -40,5 +40,4 @@ training:
   mixed_precision: true
   warmup_steps: 1000
   min_lr: 1.0e-6
-  eval_every_n_steps: 500
   seed: 42
