@@ -3,7 +3,7 @@ log_dir: logs
 
 data:
   manifest: data/manifest.yaml
-  input_window_length: 8192
+  input_window_length: 131072
 
 tokenizer:
   k: 6
@@ -14,7 +14,7 @@ augmentation:
   rc_prob: 0.5
 
 model:
-  # conv tower (3-layer, 8x downsample): ~4095 tokens (stride=2) → ~512 tokens
+  # conv tower (6-layer, 64x downsample): ~65534 tokens (stride-2, 131kb) → ~1023 tokens
   d_model: 256
   n_layers: 6
   n_heads: 8

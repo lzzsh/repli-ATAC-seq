@@ -54,31 +54,40 @@ class _SharedHead(nn.Module):
         return phase, class_logits
 
 
-# ── Conv Tower (Basenji2-style) ───────────────────────────────────────────────
+# ── Conv Tower (Enformer/Basenji2-style, 6-layer 64x downsample) ──────────────
 class _ConvStem(nn.Module):
-    """Three-layer conv tower with progressive downsampling (8x total).
+    """Six-layer conv tower with progressive downsampling (64x total).
 
-    Layer 1: kernel=15, stride=2, filters=128  → L/2
-    Layer 2: kernel=9,  stride=2, filters=192  → L/4
-    Layer 3: kernel=7,  stride=2, filters=d_model → L/8
+    Mirrors Basenji2/Enformer conv tower design:
+      filters grow from 64 → d_model, kernel shrinks 15→5.
 
-    Input:  [B, L, d_model]   (e.g. L=4095 with stride-2 tokenizer)
-    Output: [B, L//8, d_model] (e.g. ~511)
+    Input:  [B, L, d_model]      (e.g. L=65534 with stride-2 tokenizer, 131kb window)
+    Output: [B, L//64, d_model]  (e.g. ~1023)
     """
+    _CONFIGS = [
+        (15, 64),
+        (5,  96),
+        (5,  128),
+        (5,  160),
+        (5,  192),
+        (5,  None),   # None → d_model (filled in __init__)
+    ]
+
     def __init__(self, d_model: int, dropout: float = 0.1):
         super().__init__()
-        self.layers = nn.ModuleList([
-            self._block(d_model, 128,     kernel=15, stride=2, dropout=dropout),
-            self._block(128,     192,     kernel=9,  stride=2, dropout=dropout),
-            self._block(192,     d_model, kernel=7,  stride=2, dropout=dropout),
-        ])
+        configs = [(k, f if f is not None else d_model) for k, f in self._CONFIGS]
+        in_ch = d_model
+        blocks = []
+        for kernel, out_ch in configs:
+            blocks.append(self._block(in_ch, out_ch, kernel, dropout))
+            in_ch = out_ch
+        self.layers = nn.ModuleList(blocks)
 
     @staticmethod
-    def _block(in_ch, out_ch, kernel, stride, dropout):
-        padding = kernel // 2
+    def _block(in_ch, out_ch, kernel, dropout):
         return nn.Sequential(
-            nn.Conv1d(in_ch, out_ch, kernel_size=kernel, stride=stride, padding=padding),
-            nn.LayerNorm(out_ch),  # applied after transpose inside forward
+            nn.Conv1d(in_ch, out_ch, kernel_size=kernel, stride=2, padding=kernel // 2),
+            nn.LayerNorm(out_ch),
             nn.GELU(),
             nn.Dropout(dropout),
         )
@@ -88,10 +97,10 @@ class _ConvStem(nn.Module):
         x = x.transpose(1, 2)   # [B, C, L]
         for block in self.layers:
             conv, norm, act, drop = block[0], block[1], block[2], block[3]
-            x = conv(x)                          # [B, C_out, L']
-            x = act(norm(x.transpose(1, 2)))     # LayerNorm on last dim
-            x = drop(x).transpose(1, 2)          # back to [B, C_out, L']
-        return x.transpose(1, 2)                 # [B, L//8, d_model]
+            x = conv(x)
+            x = act(norm(x.transpose(1, 2)))
+            x = drop(x).transpose(1, 2)
+        return x.transpose(1, 2)   # [B, L//64, d_model]
 
 
 # ── FiLM Conditioning ─────────────────────────────────────────────────────────
@@ -167,7 +176,7 @@ class DNATransformer(nn.Module):
         species_emb_dim: int = 64,
         head_hidden_dim: int = 128,
         head_dropout: float = 0.1,
-        max_seq_len: int = 4200,
+        max_seq_len: int = 66000,
     ):
         super().__init__()
         self.max_seq_len = max_seq_len
@@ -183,7 +192,7 @@ class DNATransformer(nn.Module):
         self.head = _SharedHead(d_model, head_hidden_dim, head_dropout)
         self.register_buffer(
             "freqs_cis",
-            _precompute_freqs_cis(d_model // n_heads, max_seq_len // 8 + 1),
+            _precompute_freqs_cis(d_model // n_heads, max_seq_len // 64 + 1),
             persistent=False,
         )
 
@@ -197,7 +206,7 @@ class DNATransformer(nn.Module):
         sp = self.species_emb(species_id)             # [B, species_emb_dim]
         freqs_cis = self.freqs_cis[:L2]
         if key_padding_mask is not None:
-            key_padding_mask = key_padding_mask[:, ::8][:, :L2]  # match conv tower 8x downsample
+            key_padding_mask = key_padding_mask[:, ::64][:, :L2]  # match conv tower 64x downsample
         for layer in self.layers:
             x = layer(x, freqs_cis, sp, key_padding_mask)
         x = self.norm(x)
