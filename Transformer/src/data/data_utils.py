@@ -7,11 +7,26 @@ from pyfaidx import Fasta
 RT_CLASS_MAP = {"E": 0, "M": 1, "L": 2}
 VALID_RT_CLASSES = {"E", "M", "L"}
 _COMPLEMENT = str.maketrans("ACGTacgtNn", "TGCAtgcaNn")
+_BASE_IDX = {"A": 0, "C": 1, "G": 2, "T": 3}
 
 
 # ── sequence utilities ────────────────────────────────────────────────────────
 def reverse_complement(seq: str) -> str:
     return seq.translate(_COMPLEMENT)[::-1]
+
+
+def one_hot_encode(seq: str) -> np.ndarray:
+    """Encode DNA string to one-hot array of shape [4, L].
+
+    Channels: A=0, C=1, G=2, T=3. Non-ACGT bases (N, IUPAC) → all zeros.
+    """
+    L = len(seq)
+    out = np.zeros((4, L), dtype=np.float32)
+    for i, base in enumerate(seq.upper()):
+        idx = _BASE_IDX.get(base)
+        if idx is not None:
+            out[idx, i] = 1.0
+    return out
 
 
 class GenomeSequence:

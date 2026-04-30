@@ -76,7 +76,7 @@ class _ConvStem(nn.Module):
     def __init__(self, d_model: int, dropout: float = 0.1):
         super().__init__()
         configs = [(k, f if f is not None else d_model) for k, f in self._CONFIGS]
-        in_ch = d_model
+        in_ch = 4   # one-hot input: A/C/G/T
         blocks = []
         for kernel, out_ch in configs:
             blocks.append(self._block(in_ch, out_ch, kernel, dropout))
@@ -93,8 +93,7 @@ class _ConvStem(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, L, d_model]
-        x = x.transpose(1, 2)   # [B, C, L]
+        # x: [B, 4, L]  (one-hot)
         for block in self.layers:
             conv, norm, act, drop = block[0], block[1], block[2], block[3]
             x = conv(x)
@@ -165,7 +164,6 @@ class _EncoderLayer(nn.Module):
 class DNATransformer(nn.Module):
     def __init__(
         self,
-        vocab_size: int,
         n_species: int,
         d_model: int = 256,
         n_layers: int = 6,
@@ -180,7 +178,6 @@ class DNATransformer(nn.Module):
     ):
         super().__init__()
         self.max_seq_len = max_seq_len
-        self.token_emb = nn.Embedding(vocab_size, d_model, padding_idx=0)
         self.conv_stem = _ConvStem(d_model, dropout)
         self.species_emb = nn.Embedding(n_species, species_emb_dim)
         self.layers = nn.ModuleList([
@@ -196,12 +193,10 @@ class DNATransformer(nn.Module):
             persistent=False,
         )
 
-    def forward(self, input_ids: torch.Tensor, species_id: torch.Tensor, key_padding_mask: torch.Tensor | None = None, return_attn_weights: bool = False):
-        assert input_ids.shape[1] <= self.max_seq_len, \
-            f"Input length {input_ids.shape[1]} exceeds max_seq_len {self.max_seq_len}"
-        B, L = input_ids.shape
-        x = self.token_emb(input_ids)                 # [B, L, d_model]
-        x = self.conv_stem(x)                         # [B, L//2, d_model]
+    def forward(self, one_hot: torch.Tensor, species_id: torch.Tensor, key_padding_mask: torch.Tensor | None = None, return_attn_weights: bool = False):
+        assert one_hot.shape[-1] <= self.max_seq_len, \
+            f"Input length {one_hot.shape[-1]} exceeds max_seq_len {self.max_seq_len}"
+        x = self.conv_stem(one_hot)              # [B, L//64, d_model]
         L2 = x.shape[1]
         sp = self.species_emb(species_id)             # [B, species_emb_dim]
         freqs_cis = self.freqs_cis[:L2]

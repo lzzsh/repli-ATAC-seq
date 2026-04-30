@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from torch.utils.data import Dataset, Sampler
 
-from .data_utils import GenomeSequence, get_window_coords, load_labels, reverse_complement, RT_CLASS_MAP
-from ..tokenization.tokenizer import KmerTokenizer
+from .data_utils import GenomeSequence, get_window_coords, load_labels, reverse_complement, RT_CLASS_MAP, one_hot_encode
 
 
 # ── manifest ──────────────────────────────────────────────────────────────────
@@ -42,11 +41,9 @@ class RepliSeqDataset(Dataset):
         self,
         species_configs: list[SpeciesConfig],
         split: str,                  # "train" | "val" | "test"
-        tokenizer: KmerTokenizer,
-        window_size: int = 8192,
+        window_size: int = 131072,
         rc_prob: float = 0.5,        # 0.0 disables augmentation
     ):
-        self.tokenizer = tokenizer
         self.window_size = window_size
         self.rc_prob = rc_prob if split == "train" else 0.0
         self.samples: list[dict] = []
@@ -83,7 +80,7 @@ class RepliSeqDataset(Dataset):
         if self.rc_prob > 0 and random.random() < self.rc_prob:
             seq = reverse_complement(seq)
         return {
-            "input_ids": torch.tensor(self.tokenizer.tokenize(seq), dtype=torch.long),
+            "one_hot": torch.tensor(one_hot_encode(seq), dtype=torch.float32),  # [4, L]
             "species_id": torch.tensor(s["species_id"], dtype=torch.long),
             "phase_labels": torch.tensor([s["ES_log1p"], s["MS_log1p"], s["LS_log1p"]], dtype=torch.float32),
             "rt_class": torch.tensor(s["rt_class"], dtype=torch.long),

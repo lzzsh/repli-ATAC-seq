@@ -8,7 +8,6 @@ from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import f1_score, roc_auc_score, balanced_accuracy_score
 
 from .data.dataset import RepliSeqDataset, load_manifest
-from .tokenization.tokenizer import KmerTokenizer
 from .models.model import DNATransformer
 
 
@@ -47,10 +46,10 @@ def evaluate_predictions(
 
 
 # ── shared helpers ────────────────────────────────────────────────────────────
-def _load_model(cfg: dict, checkpoint_path: str, n_species: int, vocab_size: int, device) -> DNATransformer:
+def _load_model(cfg: dict, checkpoint_path: str, n_species: int, device) -> DNATransformer:
     ckpt = torch.load(checkpoint_path, map_location=device)
     model = DNATransformer(
-        vocab_size=vocab_size, n_species=n_species,
+        n_species=n_species,
         d_model=cfg["model"]["d_model"], n_layers=cfg["model"]["n_layers"],
         n_heads=cfg["model"]["n_heads"], dim_feedforward=cfg["model"]["dim_feedforward"],
         dropout=0.0, attn_dropout=0.0,
@@ -66,7 +65,7 @@ def _run_inference(model, loader, device):
     with torch.no_grad():
         for batch in loader:
             batch = {k: v.to(device) for k, v in batch.items()}
-            out = model(batch["input_ids"], batch["species_id"])
+            out = model(batch["one_hot"], batch["species_id"])
             pp.append(out["phase_pred"].cpu().numpy())
             pt.append(batch["phase_labels"].cpu().numpy())
             wt.append(batch["wrt"].cpu().numpy())
@@ -82,14 +81,13 @@ def eval_wt(config_path: str, checkpoint_path: str, output_dir: str):
         cfg = yaml.safe_load(f)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     species_configs = load_manifest(cfg["data"]["manifest"])
-    tokenizer = KmerTokenizer(k=cfg["tokenizer"]["k"], stride=cfg["tokenizer"]["stride"])
-    model = _load_model(cfg, checkpoint_path, len(species_configs), tokenizer.vocab_size, device)
+    model = _load_model(cfg, checkpoint_path, len(species_configs), device)
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = []
     for sp in species_configs:
-        ds = RepliSeqDataset([sp], "test", tokenizer,
+        ds = RepliSeqDataset([sp], "test",
                              window_size=cfg["data"]["input_window_length"], rc_prob=0.0)
         loader = DataLoader(ds, batch_size=cfg["training"]["batch_size"], shuffle=False, num_workers=4)
         m = evaluate_predictions(*_run_inference(model, loader, device))
@@ -106,13 +104,12 @@ def eval_cross_species(config_path: str, checkpoint_path: str, held_out_species:
         cfg = yaml.safe_load(f)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     species_configs = load_manifest(cfg["data"]["manifest"])
-    tokenizer = KmerTokenizer(k=cfg["tokenizer"]["k"], stride=cfg["tokenizer"]["stride"])
-    model = _load_model(cfg, checkpoint_path, len(species_configs), tokenizer.vocab_size, device)
+    model = _load_model(cfg, checkpoint_path, len(species_configs), device)
 
     target = next(sp for sp in species_configs if sp.name == held_out_species)
     target.test_chroms = target.train_chroms + target.val_chroms + target.test_chroms
 
-    ds = RepliSeqDataset([target], "test", tokenizer,
+    ds = RepliSeqDataset([target], "test",
                          window_size=cfg["data"]["input_window_length"], rc_prob=0.0)
     loader = DataLoader(ds, batch_size=cfg["training"]["batch_size"], shuffle=False, num_workers=4)
     m = evaluate_predictions(*_run_inference(model, loader, device))

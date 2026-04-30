@@ -13,7 +13,6 @@ import logging
 from tqdm import tqdm
 
 from .data.dataset import RepliSeqDataset, SpeciesBalancedSampler, load_manifest
-from .tokenization.tokenizer import KmerTokenizer
 from .models.model import DNATransformer, MultiTaskLoss
 from .eval import evaluate_predictions, compute_wrt_from_phase_pred
 
@@ -36,8 +35,8 @@ def _validate(model, loader, criterion, device) -> dict:
     with torch.no_grad():
         for batch in loader:
             batch = {k: v.to(device) for k, v in batch.items()}
-            out = model.module.forward(batch["input_ids"], batch["species_id"]) \
-                if isinstance(model, DDP) else model(batch["input_ids"], batch["species_id"])
+            out = model.module.forward(batch["one_hot"], batch["species_id"]) \
+                if isinstance(model, DDP) else model(batch["one_hot"], batch["species_id"])
             losses = criterion(out, batch)
             total_loss += losses["total"].item()
             phase_loss += losses["phase"].item()
@@ -81,19 +80,14 @@ def train(config_path: str):
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     species_configs = load_manifest(cfg["data"]["manifest"])
-    tokenizer = KmerTokenizer(
-        k=cfg["tokenizer"]["k"],
-        stride=cfg["tokenizer"]["stride"],
-        add_cls=cfg["tokenizer"].get("add_cls_token", True),
-    )
 
     train_ds = RepliSeqDataset(
-        species_configs, "train", tokenizer,
+        species_configs, "train",
         window_size=cfg["data"]["input_window_length"],
         rc_prob=cfg["augmentation"]["rc_prob"],
     )
     val_ds = RepliSeqDataset(
-        species_configs, "val", tokenizer,
+        species_configs, "val",
         window_size=cfg["data"]["input_window_length"],
         rc_prob=0.0,
     )
@@ -111,7 +105,6 @@ def train(config_path: str):
 
     class_weights = _build_class_weights(train_ds).to(device)
     model = DNATransformer(
-        vocab_size=tokenizer.vocab_size,
         n_species=len(species_configs),
         d_model=cfg["model"]["d_model"],
         n_layers=cfg["model"]["n_layers"],
@@ -168,7 +161,7 @@ def train(config_path: str):
         for batch in (tqdm(train_loader, desc=f"Epoch {epoch+1}") if is_master else train_loader):
             batch = {k: v.to(device) for k, v in batch.items()}
             with autocast(enabled=cfg["training"]["mixed_precision"]):
-                out = model(batch["input_ids"], batch["species_id"])
+                out = model(batch["one_hot"], batch["species_id"])
                 losses = criterion(out, batch)
             scaler.scale(losses["total"] / accum).backward()
             epoch_loss_total += losses["total"].item()
