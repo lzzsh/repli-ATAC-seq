@@ -39,6 +39,30 @@ def _head(d_model: int, out_dim: int, hidden: int, dropout: float) -> nn.Sequent
     )
 
 
+# ── Conv Stem ─────────────────────────────────────────────────────────────────
+class _ConvStem(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1):
+        super().__init__()
+        self.conv1 = nn.Conv1d(d_model, d_model, kernel_size=15, padding=7)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.conv2 = nn.Conv1d(d_model, d_model, kernel_size=5, padding=2, stride=2)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.act = nn.GELU()
+        self.drop = nn.Dropout(dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [B, L, d_model]
+        x = x.transpose(1, 2)                          # [B, d_model, L]
+        x = self.act(self.conv1(x))
+        x = x.transpose(1, 2)                          # [B, L, d_model]
+        x = self.drop(self.norm1(x))
+        x = x.transpose(1, 2)                          # [B, d_model, L]
+        x = self.act(self.conv2(x))
+        x = x.transpose(1, 2)                          # [B, L//2, d_model]
+        x = self.drop(self.norm2(x))
+        return x
+
+
 # ── FiLM Conditioning ─────────────────────────────────────────────────────────
 class _FiLM(nn.Module):
     def __init__(self, cond_dim: int, d_model: int):
