@@ -172,24 +172,30 @@ def train(config_path: str):
                     writer.add_scalar("train/loss_class", losses["class"].item(), global_step)
                     writer.add_scalar("train/lr", scheduler.get_last_lr()[0], global_step)
 
-            if is_master and global_step % cfg["training"]["eval_every_n_steps"] == 0:
-                metrics = _validate(model, val_loader, device)
-                score = metrics["mean_phase_pearson"] + metrics["wrt_spearman"] + metrics["macro_f1"]
-                logger.info(f"step={global_step} val_score={score:.4f} wrt_spearman={metrics['wrt_spearman']:.4f}")
-                for k, v in metrics.items():
-                    if isinstance(v, float):
-                        writer.add_scalar(f"val/{k}", v, global_step)
-                if score > best_score:
-                    best_score = score
-                    patience = 0
-                    raw = model.module if isinstance(model, DDP) else model
-                    torch.save({"model": raw.state_dict(), "cfg": cfg, "step": global_step,
-                                "metrics": metrics}, ckpt_dir / "best_model.pt")
-                    logger.info("  → new best checkpoint saved")
-                else:
-                    patience += 1
-                if patience >= cfg["training"]["early_stopping_patience"]:
-                    logger.info("Early stopping.")
+            if global_step % cfg["training"]["eval_every_n_steps"] == 0:
+                should_stop = torch.tensor(0, device=device)
+                if is_master:
+                    metrics = _validate(model, val_loader, device)
+                    score = metrics["mean_phase_pearson"] + metrics["wrt_spearman"] + metrics["macro_f1"]
+                    logger.info(f"step={global_step} val_score={score:.4f} wrt_spearman={metrics['wrt_spearman']:.4f}")
+                    for k, v in metrics.items():
+                        if isinstance(v, float):
+                            writer.add_scalar(f"val/{k}", v, global_step)
+                    if score > best_score:
+                        best_score = score
+                        patience = 0
+                        raw = model.module if isinstance(model, DDP) else model
+                        torch.save({"model": raw.state_dict(), "cfg": cfg, "step": global_step,
+                                    "metrics": metrics}, ckpt_dir / "best_model.pt")
+                        logger.info("  → new best checkpoint saved")
+                    else:
+                        patience += 1
+                    if patience >= cfg["training"]["early_stopping_patience"]:
+                        logger.info("Early stopping.")
+                        should_stop = torch.tensor(1, device=device)
+                if ddp:
+                    dist.broadcast(should_stop, src=0)
+                if should_stop.item():
                     if ddp:
                         dist.destroy_process_group()
                     return
