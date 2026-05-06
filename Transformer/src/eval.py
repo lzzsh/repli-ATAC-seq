@@ -45,8 +45,6 @@ def _load_model(cfg: dict, checkpoint_path: str, device) -> Basenji2Model:
     ckpt = torch.load(checkpoint_path, map_location=device)
     model = Basenji2Model(
         bn_momentum=cfg["model"]["bn_momentum"],
-        head_hidden_dim=cfg["model"]["head_hidden_dim"],
-        head_dropout=0.0,
     )
     model.load_state_dict(ckpt["model"])
     return model.to(device).eval()

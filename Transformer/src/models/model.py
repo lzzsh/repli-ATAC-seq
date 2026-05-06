@@ -4,14 +4,18 @@ import torch.nn.functional as F
 import numpy as np
 
 
-# ── Conv block (BN → GELU → Conv, optional pool) ─────────────────────────────
+# ── Conv block ────────────────────────────────────────────────────────────────
+# Two modes controlled by `pre_norm`:
+#   pre_norm=True  (stem/tower/bottleneck): BN → GELU → Conv  (pre-activation)
+#   pre_norm=False (residual internals):    GELU → Conv → BN   (matches Basenji2 paper)
 class _ConvBlock(nn.Module):
     def __init__(self, in_ch: int, out_ch: int, kernel_size: int,
                  dilation: int = 1, pool_size: int = 1,
                  dropout: float = 0.0, bn_momentum: float = 0.1,
-                 norm_gamma_zero: bool = False):
+                 norm_gamma_zero: bool = False, pre_norm: bool = True):
         super().__init__()
-        self.bn = nn.BatchNorm1d(in_ch, momentum=bn_momentum)
+        self.pre_norm = pre_norm
+        self.bn = nn.BatchNorm1d(in_ch if pre_norm else out_ch, momentum=bn_momentum)
         if norm_gamma_zero:
             nn.init.zeros_(self.bn.weight)
         self.act = nn.GELU()
@@ -24,7 +28,10 @@ class _ConvBlock(nn.Module):
         self.pool = nn.MaxPool1d(pool_size) if pool_size > 1 else nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.conv(self.act(self.bn(x)))
+        if self.pre_norm:
+            x = self.conv(self.act(self.bn(x)))
+        else:
+            x = self.bn(self.conv(self.act(x)))
         x = self.drop(x)
         x = self.pool(x)
         return x
@@ -37,12 +44,14 @@ class _DilatedResidual(nn.Module):
     def __init__(self, in_ch: int, filters: int, kernel_size: int,
                  dilation: int, dropout: float, bn_momentum: float):
         super().__init__()
+        # paper order: GELU → Conv → BN (pre_norm=False)
         self.conv1 = _ConvBlock(in_ch, filters, kernel_size,
-                                dilation=dilation, bn_momentum=bn_momentum)
+                                dilation=dilation, bn_momentum=bn_momentum,
+                                pre_norm=False)
         # second conv: projects back to in_ch, gamma init zeros (InitZero trick)
         self.conv2 = _ConvBlock(filters, in_ch, 1,
                                 dropout=dropout, bn_momentum=bn_momentum,
-                                norm_gamma_zero=True)
+                                norm_gamma_zero=True, pre_norm=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + self.conv2(self.conv1(x))
@@ -108,17 +117,15 @@ class _Basenji2Trunk(nn.Module):
         return self.bottleneck(x)
 
 
-# ── Prediction Heads ──────────────────────────────────────────────────────────
+# ── Prediction Head ───────────────────────────────────────────────────────────
 class _SharedHead(nn.Module):
-    def __init__(self, d_model: int, hidden: int, dropout: float):
+    """Direct conv1×1 equivalent: Linear(1536→4) → softplus, matching Basenji2 paper."""
+    def __init__(self, d_model: int, n_tracks: int = 4):
         super().__init__()
-        self.shared = nn.Sequential(nn.Linear(d_model, hidden), nn.GELU(), nn.Dropout(dropout))
-        self.phase_out = nn.Linear(hidden, 4)  # ES, MS, LS, G1
+        self.out = nn.Linear(d_model, n_tracks)
 
     def forward(self, x: torch.Tensor):
-        h = self.shared(x)
-        phase = F.softplus(self.phase_out(h))
-        return phase
+        return F.softplus(self.out(x))
 
 
 # ── Basenji2Model ─────────────────────────────────────────────────────────────
@@ -129,15 +136,10 @@ class Basenji2Model(nn.Module):
     _CENTER_START = 108
     _CENTER_END   = 116
 
-    def __init__(
-        self,
-        bn_momentum: float = 0.1,
-        head_hidden_dim: int = 128,
-        head_dropout: float = 0.1,
-    ):
+    def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _Basenji2Trunk(bn_momentum=bn_momentum)
-        self.head = _SharedHead(1536, head_hidden_dim, head_dropout)
+        self.head = _SharedHead(1536, n_tracks=4)
 
     def forward(self, one_hot: torch.Tensor, per_position: bool = False):
         # one_hot: [B, 4, L]

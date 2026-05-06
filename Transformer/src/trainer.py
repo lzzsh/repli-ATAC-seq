@@ -92,8 +92,6 @@ def train(config_path: str):
 
     model = Basenji2Model(
         bn_momentum=cfg["model"]["bn_momentum"],
-        head_hidden_dim=cfg["model"]["head_hidden_dim"],
-        head_dropout=cfg["model"]["head_dropout"],
     ).to(device)
 
     if ddp:
@@ -101,10 +99,10 @@ def train(config_path: str):
 
     criterion = PhaseLoss()
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.SGD(
         model.parameters(),
         lr=cfg["training"]["learning_rate"],
-        weight_decay=cfg["training"].get("weight_decay", 0.0),
+        momentum=cfg["training"].get("momentum", 0.99),
     )
     # ReduceLROnPlateau: halve lr when val loss stops improving
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

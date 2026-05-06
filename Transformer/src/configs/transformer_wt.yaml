@@ -6,27 +6,25 @@ data:
   input_window_length: 32768
 
 augmentation:
-  rc_prob: 0.0
+  rc_prob: 0.5
   shift_max: 3
 
 model:
   bn_momentum: 0.1
-  head_hidden_dim: 128
-  head_dropout: 0.2
 
 loss:
   lambda_phase: 1.0
 
 training:
-  learning_rate: 1.0e-3
-  weight_decay: 1.0e-4
+  learning_rate: 4.0e-3
+  momentum: 0.99
   lr_decay_factor: 0.2
   lr_patience: 16
   min_lr: 1.0e-6
   batch_size: 8
   gradient_accumulation_steps: 1
   max_epochs: 200
-  early_stopping_patience: 16
+  early_stopping_patience: 30
   gradient_clip_norm: 2.0
   mixed_precision: true
   seed: 42
