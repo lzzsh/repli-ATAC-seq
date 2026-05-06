@@ -16,6 +16,7 @@ class SpeciesConfig:
     name: str
     fasta: str
     count_tsv: str
+    gff3: str
     train_chroms: list[str]
     val_chroms: list[str]
     test_chroms: list[str]
@@ -28,6 +29,7 @@ def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
     return [
         SpeciesConfig(
             name=sp["name"], fasta=sp["fasta"], count_tsv=sp["count_tsv"],
+            gff3=sp["gff3"],
             train_chroms=sp["train_chroms"], val_chroms=sp["val_chroms"],
             test_chroms=sp["test_chroms"], species_id=i,
         )
@@ -41,17 +43,19 @@ class RepliSeqDataset(Dataset):
         self,
         species_configs: list[SpeciesConfig],
         split: str,                  # "train" | "val" | "test"
-        window_size: int = 131072,
-        rc_prob: float = 0.5,        # 0.0 disables augmentation
+        window_size: int = 32768,
+        rc_prob: float = 0.5,        # 0.0 disables RC augmentation
+        shift_max: int = 0,          # max bp shift each side; 0 disables
     ):
         self.window_size = window_size
         self.rc_prob = rc_prob if split == "train" else 0.0
+        self.shift_max = shift_max if split == "train" else 0
         self.samples: list[dict] = []
         self.genomes: dict[str, GenomeSequence] = {}
 
         for sp in species_configs:
             self.genomes[sp.name] = GenomeSequence(sp.fasta)
-            df = load_labels(sp.count_tsv, sp.name)
+            df = load_labels(sp.count_tsv, sp.name, sp.gff3)
             chroms = getattr(sp, f"{split}_chroms")
             df = df[df["chrom"].isin(chroms)].reset_index(drop=True)
 
@@ -64,9 +68,10 @@ class RepliSeqDataset(Dataset):
                 self.samples.append({
                     "species": sp.name, "species_id": sp.species_id,
                     "chrom": row["chrom"], "win_start": ws, "win_end": we,
-                    "ES_log1p": float(row["ES_log1p"]),
-                    "MS_log1p": float(row["MS_log1p"]),
-                    "LS_log1p": float(row["LS_log1p"]),
+                    "ES_count": float(row["ES_count"]),
+                    "MS_count": float(row["MS_count"]),
+                    "LS_count": float(row["LS_count"]),
+                    "G1_count": float(row["G1_count"]),
                     "WRT": float(row["WRT"]),
                     "rt_class": RT_CLASS_MAP[row["RT_class"]],
                 })
@@ -76,13 +81,16 @@ class RepliSeqDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict:
         s = self.samples[idx]
-        seq = self.genomes[s["species"]].fetch(s["chrom"], s["win_start"], s["win_end"], self.window_size)
+        shift = random.randint(-self.shift_max, self.shift_max) if self.shift_max > 0 else 0
+        seq = self.genomes[s["species"]].fetch(
+            s["chrom"], s["win_start"] + shift, s["win_end"] + shift, self.window_size
+        )
         if self.rc_prob > 0 and random.random() < self.rc_prob:
             seq = reverse_complement(seq)
         return {
             "one_hot": torch.tensor(one_hot_encode(seq), dtype=torch.float32),  # [4, L]
             "species_id": torch.tensor(s["species_id"], dtype=torch.long),
-            "phase_labels": torch.tensor([s["ES_log1p"], s["MS_log1p"], s["LS_log1p"]], dtype=torch.float32),
+            "phase_labels": torch.tensor([s["ES_count"], s["MS_count"], s["LS_count"], s["G1_count"]], dtype=torch.float32),
             "rt_class": torch.tensor(s["rt_class"], dtype=torch.long),
             "wrt": torch.tensor(s["WRT"], dtype=torch.float32),
         }

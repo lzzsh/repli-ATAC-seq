@@ -1,38 +1,32 @@
-output_dir: outputs/transformer_wt
+output_dir: outputs/basenji2_wt
 log_dir: logs
 
 data:
   manifest: data/manifest.yaml
-  input_window_length: 131072
+  input_window_length: 32768
 
 augmentation:
-  rc_prob: 0.5
+  rc_prob: 0.0
+  shift_max: 3
 
 model:
-  # conv tower (6-layer, 64x downsample): ~65534 tokens (stride-2, 131kb) → ~1023 tokens
-  d_model: 256
-  n_layers: 6
-  n_heads: 8
-  dim_feedforward: 1024
-  dropout: 0.1
-  attention_dropout: 0.1
-  species_embedding_dim: 64
+  bn_momentum: 0.1
   head_hidden_dim: 128
-  head_dropout: 0.1
+  head_dropout: 0.2
 
 loss:
   lambda_phase: 1.0
-  lambda_class: 0.5
 
 training:
-  learning_rate: 0.0001
-  weight_decay: 0.01
-  batch_size: 16
-  gradient_accumulation_steps: 4
-  max_epochs: 100
-  early_stopping_patience: 10
-  gradient_clip_norm: 1.0
-  mixed_precision: true
-  warmup_steps: 1000
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  lr_decay_factor: 0.2
+  lr_patience: 16
   min_lr: 1.0e-6
+  batch_size: 8
+  gradient_accumulation_steps: 1
+  max_epochs: 200
+  early_stopping_patience: 16
+  gradient_clip_norm: 2.0
+  mixed_precision: true
   seed: 42
