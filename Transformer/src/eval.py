@@ -12,14 +12,15 @@ from .models.model import Basenji2Model
 
 # ── metrics ───────────────────────────────────────────────────────────────────
 def compute_wrt_from_phase_pred(phase_pred: np.ndarray, eps: float = 1e-6) -> np.ndarray:
-    # Mirror load_labels: TPM-normalize ES/MS/LS independently, then compute WRT.
-    # G1 (index 3) is not part of WRT.
+    # phase_pred is log1p(TPM); invert log1p before TPM-normalizing and computing WRT.
+    linear = np.expm1(np.clip(phase_pred, 0, None))  # → TPM scale, non-negative
+
     def tpm(x):
         return x / (x.sum() + eps) * 1e6
 
-    es = tpm(phase_pred[:, 0])
-    ms = tpm(phase_pred[:, 1])
-    ls = tpm(phase_pred[:, 2])
+    es = tpm(linear[:, 0])
+    ms = tpm(linear[:, 1])
+    ls = tpm(linear[:, 2])
     return (0.5 * ms + ls) / (es + ms + ls + eps)
 
 
@@ -28,6 +29,12 @@ def evaluate_predictions(
     phase_true: np.ndarray,
     wrt_true: np.ndarray,
 ) -> dict:
+    # guard against NaN/Inf from numerical instability
+    valid = np.isfinite(phase_pred).all(axis=1) & np.isfinite(phase_true).all(axis=1)
+    phase_pred = phase_pred[valid]
+    phase_true = phase_true[valid]
+    wrt_true = wrt_true[valid]
+
     wrt_pred = compute_wrt_from_phase_pred(phase_pred)
     m = {}
     for i, name in enumerate(["ES", "MS", "LS", "G1"]):

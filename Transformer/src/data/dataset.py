@@ -68,10 +68,10 @@ class RepliSeqDataset(Dataset):
                 self.samples.append({
                     "species": sp.name, "species_id": sp.species_id,
                     "chrom": row["chrom"], "win_start": ws, "win_end": we,
-                    "ES_count": float(row["ES_count"]),
-                    "MS_count": float(row["MS_count"]),
-                    "LS_count": float(row["LS_count"]),
-                    "G1_count": float(row["G1_count"]),
+                    "ES_log1p": float(row["ES_log1p"]),
+                    "MS_log1p": float(row["MS_log1p"]),
+                    "LS_log1p": float(row["LS_log1p"]),
+                    "G1_log1p": float(row["G1_log1p"]),
                     "WRT": float(row["WRT"]),
                     "rt_class": RT_CLASS_MAP[row["RT_class"]],
                 })
@@ -90,7 +90,7 @@ class RepliSeqDataset(Dataset):
         return {
             "one_hot": torch.tensor(one_hot_encode(seq), dtype=torch.float32),  # [4, L]
             "species_id": torch.tensor(s["species_id"], dtype=torch.long),
-            "phase_labels": torch.tensor([s["ES_count"], s["MS_count"], s["LS_count"], s["G1_count"]], dtype=torch.float32),
+            "phase_labels": torch.tensor([s["ES_log1p"], s["MS_log1p"], s["LS_log1p"], s["G1_log1p"]], dtype=torch.float32),
             "rt_class": torch.tensor(s["rt_class"], dtype=torch.long),
             "wrt": torch.tensor(s["WRT"], dtype=torch.float32),
         }

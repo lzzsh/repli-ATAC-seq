@@ -119,13 +119,13 @@ class _Basenji2Trunk(nn.Module):
 
 # ── Prediction Head ───────────────────────────────────────────────────────────
 class _SharedHead(nn.Module):
-    """Direct conv1×1 equivalent: Linear(1536→4) → softplus, matching Basenji2 paper."""
+    """Linear(1536→4), matching Basenji2 paper's final conv1×1 with linear output."""
     def __init__(self, d_model: int, n_tracks: int = 4):
         super().__init__()
         self.out = nn.Linear(d_model, n_tracks)
 
     def forward(self, x: torch.Tensor):
-        return F.softplus(self.out(x))
+        return self.out(x)
 
 
 # ── Basenji2Model ─────────────────────────────────────────────────────────────
@@ -161,13 +161,9 @@ class Basenji2Model(nn.Module):
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
 class PhaseLoss(nn.Module):
-    """Poisson NLL on TPM-scale targets: loss = pred - true * log(pred + eps)."""
-    def __init__(self, eps: float = 1e-6):
-        super().__init__()
-        self.eps = eps
-
+    """MSE on raw count targets, matching params_rt.json loss=mse."""
     def forward(self, outputs: dict, batch: dict) -> dict:
         pred = outputs["phase_pred"]
         true = batch["phase_labels"]
-        loss = (pred - true * torch.log(pred + self.eps)).mean()
+        loss = F.mse_loss(pred, true)
         return {"total": loss, "phase": loss}

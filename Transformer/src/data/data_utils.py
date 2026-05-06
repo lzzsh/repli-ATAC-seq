@@ -118,11 +118,13 @@ def load_labels(count_tsv: str | Path, species: str, gff3_path: str | Path) -> p
     es = tpm_normalize(df["ES_count"].values)
     ms = tpm_normalize(df["MS_count"].values)
     ls = tpm_normalize(df["LS_count"].values)
+    g1 = tpm_normalize(df["G1_count"].values)
 
-    df["ES_tpm"], df["MS_tpm"], df["LS_tpm"] = es, ms, ls
+    df["ES_tpm"], df["MS_tpm"], df["LS_tpm"], df["G1_tpm"] = es, ms, ls, g1
     df["ES_log1p"] = np.log1p(es).astype(np.float32)
     df["MS_log1p"] = np.log1p(ms).astype(np.float32)
     df["LS_log1p"] = np.log1p(ls).astype(np.float32)
+    df["G1_log1p"] = np.log1p(g1).astype(np.float32)
     df["WRT"] = compute_wrt(es, ms, ls)
     df["species"] = species
 

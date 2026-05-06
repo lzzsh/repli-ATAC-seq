@@ -1,4 +1,6 @@
 import os
+import sys
+import time
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -9,7 +11,6 @@ from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 import yaml
 import logging
-from tqdm import tqdm
 
 from .data.dataset import RepliSeqDataset, load_manifest
 from .models.model import Basenji2Model, PhaseLoss
@@ -133,7 +134,8 @@ def train(config_path: str):
         optimizer.zero_grad()
         epoch_loss_total = epoch_loss_phase = 0.0
         epoch_batches = 0
-        for batch in (tqdm(train_loader, desc=f"Epoch {epoch+1}") if is_master else train_loader):
+        t0 = time.time()
+        for batch in train_loader:
             batch = {k: v.to(device) for k, v in batch.items()}
             with autocast(enabled=cfg["training"]["mixed_precision"]):
                 out = model(batch["one_hot"])
@@ -167,10 +169,13 @@ def train(config_path: str):
                 if isinstance(v, float) and not k.startswith("val_loss"):
                     writer.add_scalar(f"val/{k}", v, epoch + 1)
             logger.info(
-                f"epoch={epoch+1} "
-                f"train_loss={train_loss_total:.4f} "
-                f"val_loss={val_loss:.4f} "
-                f"val_pearsonr_wrt={metrics.get('wrt_pearson', float('nan')):.4f}"
+                f"epoch={epoch+1} time={time.time()-t0:.0f}s "
+                f"train_loss={train_loss_total:.4f} val_loss={val_loss:.4f} "
+                f"wrt={metrics.get('wrt_pearson', float('nan')):.4f} "
+                f"ES={metrics.get('phase_pearson_ES', float('nan')):.4f} "
+                f"MS={metrics.get('phase_pearson_MS', float('nan')):.4f} "
+                f"LS={metrics.get('phase_pearson_LS', float('nan')):.4f} "
+                f"G1={metrics.get('phase_pearson_G1', float('nan')):.4f}"
             )
             if val_loss < best_score:
                 best_score = val_loss
