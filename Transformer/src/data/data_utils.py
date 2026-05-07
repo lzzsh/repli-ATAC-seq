@@ -136,3 +136,32 @@ def load_labels(count_tsv: str | Path, species: str, gff3_path: str | Path) -> p
         lambda r: (r["chrom"], r["start"], r["end"]) in boundary_keys, axis=1
     )
     return df[~is_boundary].reset_index(drop=True)
+
+
+def load_labels_indexed(df: pd.DataFrame):
+    """
+    返回一个查询函数 query(chrom, bin_start_idx, n_bins) -> np.ndarray [n_bins, 4]
+    bin_start_idx: 该染色体上的bin序号（0-based，即 genomic_start // bin_size）
+    n_bins: 需要取的bin数量
+    缺失bin返回全零行。
+    """
+    cols = ["ES_log1p", "MS_log1p", "LS_log1p", "G1_log1p"]
+    grouped = {}
+    for chrom, grp in df.groupby("chrom"):
+        bin_size = int(grp["end"].iloc[0] - grp["start"].iloc[0])
+        idx_map = {int(row["start"]) // bin_size: row[cols].values.astype(np.float32)
+                   for _, row in grp.iterrows()}
+        grouped[chrom] = (bin_size, idx_map)
+
+    def query(chrom: str, bin_start_idx: int, n_bins: int) -> np.ndarray:
+        out = np.zeros((n_bins, 4), dtype=np.float32)
+        if chrom not in grouped:
+            return out
+        bin_size, idx_map = grouped[chrom]
+        for i in range(n_bins):
+            val = idx_map.get(bin_start_idx + i)
+            if val is not None:
+                out[i] = val
+        return out
+
+    return query
