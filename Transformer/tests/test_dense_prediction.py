@@ -172,3 +172,25 @@ def test_trainer_validate_loop_dense():
 
     metrics = evaluate_predictions(pp, pt, wt)
     assert "phase_pearson_ES" in metrics
+
+
+def test_end_to_end_forward_and_loss():
+    """完整前向传播+loss，确认梯度可以回传"""
+    model = Basenji2Model()
+    model.train()
+    criterion = PhaseLoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+    batch = {
+        "one_hot": torch.zeros(1, 4, 32768),
+        "phase_labels": torch.rand(1, 224, 4),
+        "species_id": torch.zeros(1, dtype=torch.long),
+    }
+
+    out = model(batch["one_hot"])
+    losses = criterion(out, batch)
+    losses["total"].backward()
+    grad = model.trunk.stem.conv.weight.grad
+    assert grad is not None
+    assert torch.isfinite(grad).all()
+    optimizer.step()
