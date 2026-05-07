@@ -112,3 +112,18 @@ def test_model_no_center_pooling():
         out = model(x)
     pred = out["phase_pred"]  # [1, 224, 4]
     assert not torch.allclose(pred[0, 0], pred[0, 112])
+
+
+from src.models.model import PhaseLoss
+
+def test_phase_loss_dense():
+    """PhaseLoss应接受[B,224,4]的pred和true"""
+    criterion = PhaseLoss()
+    pred = torch.randn(2, 224, 4)
+    true = torch.randn(2, 224, 4)
+    batch = {"phase_labels": true}
+    outputs = {"phase_pred": pred}
+    losses = criterion(outputs, batch)
+    assert "total" in losses
+    assert losses["total"].shape == ()  # scalar
+    assert torch.isfinite(losses["total"])
