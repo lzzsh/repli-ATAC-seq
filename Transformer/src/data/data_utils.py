@@ -146,18 +146,20 @@ def load_labels_indexed(df: pd.DataFrame):
     缺失bin返回全零行。
     """
     cols = ["ES_log1p", "MS_log1p", "LS_log1p", "G1_log1p"]
+    n_cols = len(cols)
     grouped = {}
     for chrom, grp in df.groupby("chrom"):
         bin_size = int(grp["end"].iloc[0] - grp["start"].iloc[0])
-        idx_map = {int(row["start"]) // bin_size: row[cols].values.astype(np.float32)
-                   for _, row in grp.iterrows()}
-        grouped[chrom] = (bin_size, idx_map)
+        keys = (grp["start"].values // bin_size).astype(int)
+        vals = grp[cols].values.astype(np.float32)
+        idx_map = dict(zip(keys, vals))
+        grouped[chrom] = (bin_size, idx_map, n_cols)
 
     def query(chrom: str, bin_start_idx: int, n_bins: int) -> np.ndarray:
-        out = np.zeros((n_bins, 4), dtype=np.float32)
+        out = np.zeros((n_bins, n_cols), dtype=np.float32)
         if chrom not in grouped:
             return out
-        bin_size, idx_map = grouped[chrom]
+        bin_size, idx_map, nc = grouped[chrom]
         for i in range(n_bins):
             val = idx_map.get(bin_start_idx + i)
             if val is not None:
