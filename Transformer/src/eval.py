@@ -29,7 +29,13 @@ def evaluate_predictions(
     phase_true: np.ndarray,
     wrt_true: np.ndarray,
 ) -> dict:
-    # guard against NaN/Inf from numerical instability
+    # 支持 [N,4] 和 [N,T,4] 两种shape，统一flatten为 [M,4]
+    if phase_pred.ndim == 3:
+        N, T, C = phase_pred.shape
+        phase_pred = phase_pred.reshape(N * T, C)
+        phase_true = phase_true.reshape(N * T, C)
+        wrt_true = wrt_true.reshape(N * T)
+
     valid = np.isfinite(phase_pred).all(axis=1) & np.isfinite(phase_true).all(axis=1)
     phase_pred = phase_pred[valid]
     phase_true = phase_true[valid]

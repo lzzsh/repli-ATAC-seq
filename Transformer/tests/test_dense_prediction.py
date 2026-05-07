@@ -127,3 +127,17 @@ def test_phase_loss_dense():
     assert "total" in losses
     assert losses["total"].shape == ()  # scalar
     assert torch.isfinite(losses["total"])
+
+
+from src.eval import evaluate_predictions
+
+def test_evaluate_predictions_dense():
+    """evaluate_predictions应接受[N,224,4]的输入"""
+    N = 10
+    phase_pred = np.random.rand(N, 224, 4).astype(np.float32)
+    phase_true = np.random.rand(N, 224, 4).astype(np.float32)
+    wrt_true = np.random.rand(N, 224).astype(np.float32)
+    metrics = evaluate_predictions(phase_pred, phase_true, wrt_true)
+    assert "phase_pearson_ES" in metrics
+    assert "wrt_pearson" in metrics
+    assert np.isfinite(metrics["phase_pearson_ES"])
