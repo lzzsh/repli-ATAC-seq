@@ -44,7 +44,7 @@ def _validate(model, loader, criterion, device) -> dict:
     return metrics
 
 
-def train(config_path: str):
+def train(config_path: str, resume: str | None = None):
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
 
@@ -115,6 +115,24 @@ def train(config_path: str):
     )
     scaler = GradScaler(enabled=cfg["training"]["mixed_precision"])
 
+    start_epoch = 0
+    best_score, patience, global_step = float("inf"), 0, 0
+
+    if resume:
+        ckpt = torch.load(resume, map_location=device)
+        raw = model.module if isinstance(model, DDP) else model
+        raw.load_state_dict(ckpt["model"])
+        if "optimizer" in ckpt:
+            optimizer.load_state_dict(ckpt["optimizer"])
+        if "scheduler" in ckpt:
+            scheduler.load_state_dict(ckpt["scheduler"])
+        if "scaler" in ckpt:
+            scaler.load_state_dict(ckpt["scaler"])
+        start_epoch   = ckpt.get("epoch", 0)
+        best_score    = ckpt.get("best_score", float("inf"))
+        global_step   = ckpt.get("global_step", 0)
+        if is_master:
+            logger.info(f"Resumed from {resume} (epoch {start_epoch}, best_score={best_score:.4f})")
     out_dir = Path(cfg.get("output_dir", "outputs"))
     ckpt_dir = out_dir / "checkpoints"
     log_dir = Path(cfg.get("log_dir", "logs")) / Path(config_path).stem
@@ -123,11 +141,10 @@ def train(config_path: str):
         log_dir.mkdir(parents=True, exist_ok=True)
         writer = SummaryWriter(log_dir=str(log_dir))
 
-    best_score, patience, global_step = float("inf"), 0, 0
     accum = cfg["training"]["gradient_accumulation_steps"]
     early_stop_patience = cfg["training"]["early_stopping_patience"]
 
-    for epoch in range(cfg["training"]["max_epochs"]):
+    for epoch in range(start_epoch, cfg["training"]["max_epochs"]):
         if ddp:
             train_sampler.set_epoch(epoch)
         model.train()
@@ -181,8 +198,17 @@ def train(config_path: str):
                 best_score = val_loss
                 patience = 0
                 raw = model.module if isinstance(model, DDP) else model
-                torch.save({"model": raw.state_dict(), "cfg": cfg, "epoch": epoch + 1,
-                            "metrics": metrics}, ckpt_dir / "best_model.pt")
+                torch.save({
+                    "model": raw.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "scaler": scaler.state_dict(),
+                    "cfg": cfg,
+                    "epoch": epoch + 1,
+                    "best_score": best_score,
+                    "global_step": global_step,
+                    "metrics": metrics,
+                }, ckpt_dir / "best_model.pt")
                 logger.info("  → new best checkpoint saved")
             else:
                 patience += 1
