@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 def _validate(model, loader, criterion, device) -> dict:
     model.eval()
-    pp, pt, wt = [], [], []
+    pp, pt, wt_list = [], [], []
     total_loss = phase_loss = 0.0
     n_batches = 0
     with torch.no_grad():
@@ -35,9 +35,16 @@ def _validate(model, loader, criterion, device) -> dict:
             n_batches += 1
             pp.append(out["phase_pred"].cpu().numpy())
             pt.append(batch["phase_labels"].cpu().numpy())
-            wt.append(batch["wrt"].cpu().numpy())
+            pt_np = batch["phase_labels"].cpu().numpy().reshape(-1, 4)
+            linear = np.expm1(np.clip(pt_np, 0, None))
+            eps = 1e-6
+            wrt = (0.5 * linear[:, 1] + linear[:, 2]) / (linear.sum(axis=1) + eps)
+            wt_list.append(wrt.reshape(batch["phase_labels"].shape[0], -1))
+
     metrics = evaluate_predictions(
-        np.concatenate(pp), np.concatenate(pt), np.concatenate(wt),
+        np.concatenate(pp),
+        np.concatenate(pt),
+        np.concatenate(wt_list),
     )
     metrics["val_loss_total"] = total_loss / n_batches
     metrics["val_loss_phase"] = phase_loss / n_batches

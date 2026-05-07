@@ -129,7 +129,7 @@ def test_phase_loss_dense():
     assert torch.isfinite(losses["total"])
 
 
-from src.eval import evaluate_predictions
+from src.eval import evaluate_predictions, compute_wrt_from_phase_pred
 
 def test_evaluate_predictions_dense():
     """evaluate_predictions应接受[N,224,4]的输入"""
@@ -141,3 +141,34 @@ def test_evaluate_predictions_dense():
     assert "phase_pearson_ES" in metrics
     assert "wrt_pearson" in metrics
     assert np.isfinite(metrics["phase_pearson_ES"])
+
+
+from src.models.model import Basenji2Model, PhaseLoss
+
+def test_trainer_validate_loop_dense():
+    """模拟_validate中的数据流，确认dense shape全程兼容"""
+    model = Basenji2Model()
+    model.eval()
+    criterion = PhaseLoss()
+
+    batch = {
+        "one_hot": torch.zeros(2, 4, 32768),
+        "phase_labels": torch.rand(2, 224, 4),
+        "species_id": torch.zeros(2, dtype=torch.long),
+    }
+
+    with torch.no_grad():
+        out = model(batch["one_hot"])
+    losses = criterion(out, batch)
+    assert torch.isfinite(losses["total"])
+
+    pp = out["phase_pred"].cpu().numpy()
+    pt = batch["phase_labels"].cpu().numpy()
+    pt_flat = pt.reshape(-1, 4)
+    linear = np.expm1(np.clip(pt_flat, 0, None))
+    eps = 1e-6
+    wt = (0.5 * linear[:, 1] + linear[:, 2]) / (linear.sum(axis=1) + eps)
+    wt = wt.reshape(2, 224)
+
+    metrics = evaluate_predictions(pp, pt, wt)
+    assert "phase_pearson_ES" in metrics
