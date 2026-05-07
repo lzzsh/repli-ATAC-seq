@@ -88,3 +88,27 @@ def test_dataset_no_rt_class_field():
     item = ds[0]
     assert "rt_class" not in item
     assert "wrt" not in item
+
+
+import torch
+from src.models.model import Basenji2Model
+
+def test_model_output_shape_dense():
+    """forward应输出[B, 224, 4]"""
+    model = Basenji2Model()
+    model.eval()
+    x = torch.zeros(2, 4, 32768)
+    with torch.no_grad():
+        out = model(x)
+    assert out["phase_pred"].shape == (2, 224, 4), \
+        f"expected (2,224,4), got {out['phase_pred'].shape}"
+
+def test_model_no_center_pooling():
+    """不同位置的输出应不同（没有全局pooling）"""
+    model = Basenji2Model()
+    model.eval()
+    x = torch.randn(1, 4, 32768)
+    with torch.no_grad():
+        out = model(x)
+    pred = out["phase_pred"]  # [1, 224, 4]
+    assert not torch.allclose(pred[0, 0], pred[0, 112])

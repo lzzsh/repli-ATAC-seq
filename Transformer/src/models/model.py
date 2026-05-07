@@ -130,32 +130,17 @@ class _SharedHead(nn.Module):
 
 # ── Basenji2Model ─────────────────────────────────────────────────────────────
 class Basenji2Model(nn.Module):
-    # center 8 bins in cropped space → 1024bp centered on the 32kb window
-    # 32768bp / 128bp/bin = 256 bins; crop 16 each side → 224 bins
-    # center bin in cropped space = 256//2 - 16 = 112; ±4 bins → [108, 116)
-    _CENTER_START = 108
-    _CENTER_END   = 116
-
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _Basenji2Trunk(bn_momentum=bn_momentum)
         self.head = _SharedHead(1536, n_tracks=4)
 
-    def forward(self, one_hot: torch.Tensor, per_position: bool = False):
+    def forward(self, one_hot: torch.Tensor):
         # one_hot: [B, 4, L]
-        x = self.trunk(one_hot)   # [B, 1536, 224]
-
-        if per_position:
-            # Inference: run head on every bin independently → [B, 224, 4]
-            B, C, T = x.shape
-            x_flat = x.permute(0, 2, 1).reshape(B * T, C)
-            phase_pred = self.head(x_flat).reshape(B, T, -1)
-        else:
-            # Training: center 8 bins → mean → [B, 1536] → head
-            x_center = x[:, :, self._CENTER_START:self._CENTER_END]  # [B, 1536, 8]
-            x_pooled = x_center.mean(dim=2)                           # [B, 1536]
-            phase_pred = self.head(x_pooled)                          # [B, 3]
-
+        x = self.trunk(one_hot)          # [B, 1536, 224]
+        x = x.permute(0, 2, 1)          # [B, 224, 1536]
+        B, T, C = x.shape
+        phase_pred = self.head(x.reshape(B * T, C)).reshape(B, T, -1)  # [B, 224, 4]
         return {"phase_pred": phase_pred}
 
 
