@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from torch.utils.data import Dataset, Sampler
 
-from .data_utils import GenomeSequence, get_window_coords, load_labels, reverse_complement, RT_CLASS_MAP, one_hot_encode
+from .data_utils import GenomeSequence, get_window_coords, load_labels, load_labels_indexed, reverse_complement, RT_CLASS_MAP, one_hot_encode
 
 
 # ── manifest ──────────────────────────────────────────────────────────────────
@@ -39,42 +39,42 @@ def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
 
 # ── dataset ───────────────────────────────────────────────────────────────────
 class RepliSeqDataset(Dataset):
+    # trunk crops 16 bins each side → output covers bins [16, 240) of the 256-bin window
+    _CROP = 16
+    _OUT_BINS = 224  # 256 - 2*16
+
     def __init__(
         self,
         species_configs: list[SpeciesConfig],
-        split: str,                  # "train" | "val" | "test"
+        split: str,
         window_size: int = 32768,
-        rc_prob: float = 0.5,        # 0.0 disables RC augmentation
-        shift_max: int = 0,          # max bp shift each side; 0 disables
+        rc_prob: float = 0.5,
+        shift_max: int = 0,
     ):
         self.window_size = window_size
+        self.bin_size = window_size // 256  # 32768/256 = 128
         self.rc_prob = rc_prob if split == "train" else 0.0
         self.shift_max = shift_max if split == "train" else 0
         self.samples: list[dict] = []
         self.genomes: dict[str, GenomeSequence] = {}
+        self._label_queries: dict[str, object] = {}
 
         for sp in species_configs:
             self.genomes[sp.name] = GenomeSequence(sp.fasta)
             df = load_labels(sp.count_tsv, sp.name, sp.gff3)
             chroms = getattr(sp, f"{split}_chroms")
             df = df[df["chrom"].isin(chroms)].reset_index(drop=True)
+            self._label_queries[sp.name] = load_labels_indexed(df)
 
-            for _, row in df.iterrows():
-                cs = self.genomes[sp.name].chrom_size(row["chrom"])
-                _, ws, we = get_window_coords(
-                    row["chrom"], row["start"], row["end"],
-                    window_size=window_size, chrom_size=cs,
-                )
-                self.samples.append({
-                    "species": sp.name, "species_id": sp.species_id,
-                    "chrom": row["chrom"], "win_start": ws, "win_end": we,
-                    "ES_log1p": float(row["ES_log1p"]),
-                    "MS_log1p": float(row["MS_log1p"]),
-                    "LS_log1p": float(row["LS_log1p"]),
-                    "G1_log1p": float(row["G1_log1p"]),
-                    "WRT": float(row["WRT"]),
-                    "rt_class": RT_CLASS_MAP[row["RT_class"]],
-                })
+            for chrom in chroms:
+                chrom_size = self.genomes[sp.name].chrom_size(chrom)
+                for win_start in range(0, chrom_size - window_size + 1, window_size):
+                    self.samples.append({
+                        "species": sp.name,
+                        "species_id": sp.species_id,
+                        "chrom": chrom,
+                        "win_start": win_start,
+                    })
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -82,17 +82,23 @@ class RepliSeqDataset(Dataset):
     def __getitem__(self, idx: int) -> dict:
         s = self.samples[idx]
         shift = random.randint(-self.shift_max, self.shift_max) if self.shift_max > 0 else 0
+        win_start = s["win_start"] + shift
         seq = self.genomes[s["species"]].fetch(
-            s["chrom"], s["win_start"] + shift, s["win_end"] + shift, self.window_size
+            s["chrom"], win_start, win_start + self.window_size, self.window_size
         )
-        if self.rc_prob > 0 and random.random() < self.rc_prob:
+        rc = self.rc_prob > 0 and random.random() < self.rc_prob
+        if rc:
             seq = reverse_complement(seq)
+
+        bin_offset = win_start // self.bin_size + self._CROP
+        labels = self._label_queries[s["species"]](s["chrom"], bin_offset, self._OUT_BINS)
+        if rc:
+            labels = labels[::-1].copy()
+
         return {
-            "one_hot": torch.tensor(one_hot_encode(seq), dtype=torch.float32),  # [4, L]
+            "one_hot": torch.tensor(one_hot_encode(seq), dtype=torch.float32),
             "species_id": torch.tensor(s["species_id"], dtype=torch.long),
-            "phase_labels": torch.tensor([s["ES_log1p"], s["MS_log1p"], s["LS_log1p"], s["G1_log1p"]], dtype=torch.float32),
-            "rt_class": torch.tensor(s["rt_class"], dtype=torch.long),
-            "wrt": torch.tensor(s["WRT"], dtype=torch.float32),
+            "phase_labels": torch.tensor(labels, dtype=torch.float32),
         }
 
 
