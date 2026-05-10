@@ -4,9 +4,13 @@ from pathlib import Path
 from pyfaidx import Fasta
 
 # ── constants ────────────────────────────────────────────────────────────────
-RT_CLASS_MAP = {"ES": 0, "MS": 1, "LS": 2, "NR": 3}   # NR = not replicated
-VALID_GFF3_CLASSES = {"ES", "MS", "LS"}
-BOUNDARY_CLASSES = {"ESMS", "MSLS", "ESLS", "ESMSLS"}
+RT_CLASS_MAP = {
+    "ES": 0, "MS": 1, "LS": 2, "NR": 3,
+    "ESMS": 4, "MSLS": 5, "ESLS": 6, "ESMSLS": 7,
+}
+VALID_GFF3_CLASSES = {"ES", "MS", "LS", "NR", "ESMS", "MSLS", "ESLS", "ESMSLS"}
+# IGV display names → internal class names
+_GFF3_NAME_MAP = {"Non-replication": "NR", "unknown": "NR"}
 _COMPLEMENT = str.maketrans("ACGTacgtNn", "TGCAtgcaNn")
 _BASE_IDX = {"A": 0, "C": 1, "G": 2, "T": 3}
 
@@ -76,15 +80,9 @@ def compute_wrt(es: np.ndarray, ms: np.ndarray, ls: np.ndarray, eps: float = 1e-
 
 def load_gff3_classes(
     gff3_path: str | Path,
-) -> tuple[dict[tuple[str, int, int], str], set[tuple[str, int, int]]]:
-    """Parse GFF3 in one pass.
-
-    Returns:
-        classes: (chrom, start, end) → Name for ES/MS/LS bins only
-        boundary_keys: (chrom, start, end) for boundary bins to be filtered
-    """
+) -> dict[tuple[str, int, int], str]:
+    """Parse GFF3, return (chrom, start, end) → RT class name for all valid classes."""
     classes: dict[tuple[str, int, int], str] = {}
-    boundary_keys: set[tuple[str, int, int]] = set()
     with open(gff3_path) as f:
         for line in f:
             if line.startswith("#"):
@@ -92,24 +90,22 @@ def load_gff3_classes(
             parts = line.rstrip("\n").split("\t")
             if len(parts) < 9:
                 continue
-            chrom, start, end = parts[0], int(float(parts[3])), int(float(parts[4]))
+            chrom, start, end = parts[0], int(float(parts[3])) - 1, int(float(parts[4]))
             name = ""
             for attr in parts[8].split(";"):
                 if attr.startswith("Name="):
-                    name = attr[5:]
+                    name = attr[5:].strip()
                     break
-            if name in BOUNDARY_CLASSES:
-                boundary_keys.add((chrom, start, end))
-            elif name in VALID_GFF3_CLASSES:
+            name = _GFF3_NAME_MAP.get(name, name)
+            if name in VALID_GFF3_CLASSES:
                 classes[(chrom, start, end)] = name
-    return classes, boundary_keys
+    return classes
 
 def load_labels(count_tsv: str | Path, species: str, gff3_path: str | Path) -> pd.DataFrame:
     """
     Input TSV: chrom, start, end, ES_count, MS_count, LS_count, G1_count.
-    GFF3: replication phase annotations (ES/MS/LS/boundary/absent).
-    Returns DataFrame with TPM, log1p, WRT columns and RT_class in {ES,MS,LS,NR}.
-    Boundary bins (ESMS/MSLS/ESLS/ESMSLS) are filtered out.
+    GFF3: replication phase annotations (ES/MS/LS/ESMS/MSLS/ESLS/ESMSLS/NR).
+    Returns DataFrame with RT_class column. All 8 classes are kept.
     """
     df = pd.read_csv(count_tsv, sep="\t")
     if "#chrom" in df.columns:
@@ -117,27 +113,13 @@ def load_labels(count_tsv: str | Path, species: str, gff3_path: str | Path) -> p
     for col in ["chrom", "start", "end", "ES_count", "MS_count", "LS_count", "G1_count"]:
         assert col in df.columns, f"Missing column: {col}"
 
-    es = tpm_normalize(df["ES_count"].values)
-    ms = tpm_normalize(df["MS_count"].values)
-    ls = tpm_normalize(df["LS_count"].values)
-    g1 = tpm_normalize(df["G1_count"].values)
-
-    df["ES_tpm"], df["MS_tpm"], df["LS_tpm"], df["G1_tpm"] = es, ms, ls, g1
-    df["ES_log1p"] = np.log1p(es).astype(np.float32)
-    df["MS_log1p"] = np.log1p(ms).astype(np.float32)
-    df["LS_log1p"] = np.log1p(ls).astype(np.float32)
-    df["G1_log1p"] = np.log1p(g1).astype(np.float32)
-    df["WRT"] = compute_wrt(es, ms, ls)
     df["species"] = species
 
-    gff3_classes, boundary_keys = load_gff3_classes(gff3_path)
+    gff3_classes = load_gff3_classes(gff3_path)
     df["RT_class"] = df.apply(
         lambda r: gff3_classes.get((r["chrom"], r["start"], r["end"]), "NR"), axis=1
     )
-    is_boundary = df.apply(
-        lambda r: (r["chrom"], r["start"], r["end"]) in boundary_keys, axis=1
-    )
-    return df[~is_boundary].reset_index(drop=True)
+    return df.reset_index(drop=True)
 
 
 def load_labels_indexed(df: pd.DataFrame):

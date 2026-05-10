@@ -9,7 +9,7 @@ from sklearn.metrics import f1_score, confusion_matrix
 from .data.dataset import RepliSeqDataset, load_manifest
 from .models.model import Basenji2Model
 
-_CLASS_NAMES = ["ES", "MS", "LS", "NR"]
+_CLASS_NAMES = ["ES", "MS", "LS", "NR", "ESMS", "MSLS", "ESLS", "ESMSLS"]
 
 
 def evaluate_predictions(
@@ -17,7 +17,7 @@ def evaluate_predictions(
     rt_true: np.ndarray,
 ) -> dict:
     """
-    rt_pred_logits: [N, 28, 4] or [N, 4]
+    rt_pred_logits: [N, 28, 8] or [N, 8]
     rt_true:        [N, 28] or [N] int64
     """
     if rt_pred_logits.ndim == 3:
@@ -32,7 +32,7 @@ def evaluate_predictions(
         m[f"acc_{name}"] = float((pred_cls[mask] == i).mean()) if mask.any() else float("nan")
     m["macro_f1"] = float(f1_score(rt_true, pred_cls, average="macro", zero_division=0))
     m["overall_acc"] = float((pred_cls == rt_true).mean())
-    cm = confusion_matrix(rt_true, pred_cls, labels=list(range(4)))
+    cm = confusion_matrix(rt_true, pred_cls, labels=list(range(8)))
     for i, name in enumerate(_CLASS_NAMES):
         m[f"cm_row_{name}"] = cm[i].tolist()
     return m

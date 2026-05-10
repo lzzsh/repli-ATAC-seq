@@ -135,18 +135,18 @@ class Basenji2Model(nn.Module):
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _Basenji2Trunk(bn_momentum=bn_momentum)
-        self.head = _RTHead(1536, n_classes=4)
+        self.head = _RTHead(1536, n_classes=8)
 
     def forward(self, one_hot: torch.Tensor):
         # one_hot: [B, 4, L]
         x = self.trunk(one_hot)   # [B, 1536, 224]
-        return {"rt_logits": self.head(x)}  # [B, 28, 4]
+        return {"rt_logits": self.head(x)}  # [B, 28, 8]
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
 class RTClassLoss(nn.Module):
     def forward(self, outputs: dict, batch: dict) -> dict:
-        logits = outputs["rt_logits"]          # [B, 28, 4]
+        logits = outputs["rt_logits"]          # [B, 28, 8]
         labels = batch["rt_labels"]            # [B, 28] long
-        loss = F.cross_entropy(logits.reshape(-1, 4), labels.reshape(-1))
+        loss = F.cross_entropy(logits.reshape(-1, 8), labels.reshape(-1))
         return {"total": loss, "rt": loss}
