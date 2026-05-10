@@ -57,18 +57,37 @@ class _DilatedResidual(nn.Module):
         return x + self.conv2(self.conv1(x))
 
 
+# ── Relative positional bias ──────────────────────────────────────────────────
+class _RelativePosBias(nn.Module):
+    """Learnable relative positional bias added to attention logits (Enformer-style).
+
+    bias table has shape [n_heads, 2*max_len - 1].
+    For positions i, j: bias[h, i, j] = table[h, j - i + max_len - 1]
+    """
+    def __init__(self, n_heads: int, max_len: int):
+        super().__init__()
+        self.max_len = max_len
+        self.bias = nn.Parameter(torch.zeros(n_heads, 2 * max_len - 1))
+
+    def forward(self, seq_len: int) -> torch.Tensor:
+        idx = torch.arange(seq_len, device=self.bias.device)
+        offsets = idx.unsqueeze(1) - idx.unsqueeze(0)          # [T, T]
+        table_idx = offsets + self.max_len - 1                  # [T, T], 0-based
+        return self.bias[:, table_idx]                          # [n_heads, T, T]
+
+
 # ── Basenji2 trunk ────────────────────────────────────────────────────────────
 class _Basenji2Trunk(nn.Module):
     """
-    Mirrors params_rt.json trunk exactly, translated to PyTorch:
+    Basenji2 trunk at 131072bp input:
       1. conv_block:       288 filters, k=15, pool=2
       2. conv_tower:       6 layers, filters 339→768 (×1.1776), k=5, pool=2
       3. dilated_residual: 11 layers, bottleneck 768→384→768, rate_mult=1.5, dropout=0.3
       4. Cropping1D:       crop 16 on each side  (at 128bp resolution)
       5. conv_block:       1536 filters, dropout=0.05
 
-    Input:  [B, 4, L]      (one-hot, L=32768)
-    Output: [B, 1536, 224] (per-bin features, 224 bins × 128bp)
+    Input:  [B, 4, 131072]  (one-hot)
+    Output: [B, 1536, 992]  (992 bins × 128bp, after crop-16 each side)
     """
 
     # conv tower filter schedule: 339 * 1.1776^i, rounded, 6 layers
@@ -111,8 +130,8 @@ class _Basenji2Trunk(nn.Module):
         x = self.stem(x)
         x = self.tower(x)
         x = self.dilated(x)
-        x = x[:, :, self.crop:-self.crop]  # crop 16 → [B, 768, 224]
-        return self.bottleneck(x)          # → [B, 1536, 224]
+        x = x[:, :, self.crop:-self.crop]  # crop 16 → [B, 768, 992]
+        return self.bottleneck(x)          # → [B, 1536, 992]
 
 
 # ── Prediction Head ───────────────────────────────────────────────────────────
@@ -124,10 +143,10 @@ class _RTHead(nn.Module):
         self.out = nn.Linear(d_model, n_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, C, 224]
-        x = self.pool(x)          # [B, C, 28]
-        x = x.permute(0, 2, 1)   # [B, 28, C]
-        return self.out(x)        # [B, 28, 4]
+        # x: [B, C, 992]
+        x = self.pool(x)          # [B, C, 124]
+        x = x.permute(0, 2, 1)   # [B, 124, C]
+        return self.out(x)        # [B, 124, 4]
 
 
 # ── Basenji2Model ─────────────────────────────────────────────────────────────
@@ -135,18 +154,18 @@ class Basenji2Model(nn.Module):
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _Basenji2Trunk(bn_momentum=bn_momentum)
-        self.head = _RTHead(1536, n_classes=8)
+        self.head = _RTHead(1536, n_classes=4)
 
     def forward(self, one_hot: torch.Tensor):
         # one_hot: [B, 4, L]
-        x = self.trunk(one_hot)   # [B, 1536, 224]
-        return {"rt_logits": self.head(x)}  # [B, 28, 8]
+        x = self.trunk(one_hot)   # [B, 1536, 992]
+        return {"rt_logits": self.head(x)}  # [B, 124, 4]
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
 class RTClassLoss(nn.Module):
     def forward(self, outputs: dict, batch: dict) -> dict:
-        logits = outputs["rt_logits"]          # [B, 28, 8]
+        logits = outputs["rt_logits"]          # [B, 28, 4]
         labels = batch["rt_labels"]            # [B, 28] long
-        loss = F.cross_entropy(logits.reshape(-1, 8), labels.reshape(-1))
+        loss = F.cross_entropy(logits.reshape(-1, 4), labels.reshape(-1))
         return {"total": loss, "rt": loss}
