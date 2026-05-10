@@ -39,11 +39,11 @@ def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
 
 # ── dataset ───────────────────────────────────────────────────────────────────
 class RepliSeqDataset(Dataset):
-    _BIN_SIZE    = 128     # bp per trunk output bin
-    _OUT_BIN     = 1024    # bp per model output bin (after AvgPool8)
-    _OUT_BINS    = 28      # trunk 224 bins / 8 = 28
-    _CROP_BINS   = 16      # trunk crops 16 bins each side at 128bp
-    _STRIDE      = 16384   # bp between window starts
+    _BIN_SIZE    = 128      # bp per trunk output bin
+    _OUT_BIN     = 128      # bp per model output bin (no pooling)
+    _OUT_BINS    = 992      # trunk 992 bins, all used
+    _CROP_BINS   = 16       # trunk crops 16 bins each side at 128bp
+    _STRIDE      = 16384    # bp between window starts (~12.5% of window)
 
     def __init__(
         self,

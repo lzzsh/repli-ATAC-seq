@@ -170,10 +170,10 @@ class _Basenji2Trunk(nn.Module):
 
 # ── Prediction Head ───────────────────────────────────────────────────────────
 class _RTHead(nn.Module):
-    """Transformer head: AvgPool8 → project → 4× self-attention → classify.
+    """Transformer head: project → 4× self-attention → classify at 128bp resolution.
 
     Input:  [B, in_features, 992]
-    Output: [B, 124, n_classes]
+    Output: [B, 992, n_classes]
     """
     def __init__(
         self,
@@ -186,9 +186,8 @@ class _RTHead(nn.Module):
         dropout: float = 0.1,
     ):
         super().__init__()
-        self.pool = nn.AvgPool1d(kernel_size=8, stride=8)
         self.proj = nn.Linear(in_features, d_model)
-        self.pos_bias = _RelativePosBias(n_heads=n_heads, max_len=124)
+        self.pos_bias = _RelativePosBias(n_heads=n_heads, max_len=992)
         self.layers = nn.ModuleList([
             _TransformerBlock(d_model, n_heads, ffn_dim, dropout)
             for _ in range(n_layers)
@@ -198,15 +197,14 @@ class _RTHead(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, C, 992]
-        x = self.pool(x)                    # [B, C, 124]
-        x = x.permute(0, 2, 1)             # [B, 124, C]
-        x = self.proj(x)                    # [B, 124, d_model]
+        x = x.permute(0, 2, 1)             # [B, 992, C]
+        x = self.proj(x)                    # [B, 992, d_model]
         T = x.shape[1]
         attn_bias = self.pos_bias(T)        # [n_heads, T, T]
         for layer in self.layers:
             x = layer(x, attn_bias)
-        x = self.norm(x)                    # [B, 124, d_model]
-        return self.out(x)                  # [B, 124, n_classes]
+        x = self.norm(x)                    # [B, 992, d_model]
+        return self.out(x)                  # [B, 992, n_classes]
 
 
 # ── Basenji2Model ─────────────────────────────────────────────────────────────
@@ -222,7 +220,7 @@ class Basenji2Model(nn.Module):
     def forward(self, one_hot: torch.Tensor):
         # one_hot: [B, 4, L]
         x = self.trunk(one_hot)             # [B, 1536, 992]
-        return {"rt_logits": self.head(x)}  # [B, 124, 4]
+        return {"rt_logits": self.head(x)}  # [B, 992, 4]
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────

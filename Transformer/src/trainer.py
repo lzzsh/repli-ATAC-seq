@@ -102,6 +102,7 @@ def train(config_path: str, resume: str | None = None):
         model.parameters(),
         lr=cfg["training"]["learning_rate"],
         momentum=cfg["training"].get("momentum", 0.99),
+        weight_decay=cfg["training"].get("weight_decay", 1e-4),
     )
     # ReduceLROnPlateau: halve lr when val loss stops improving
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -114,7 +115,7 @@ def train(config_path: str, resume: str | None = None):
     scaler = GradScaler(enabled=cfg["training"]["mixed_precision"])
 
     start_epoch = 0
-    best_score, patience, global_step = float("inf"), 0, 0
+    best_score, best_f1, patience, global_step = float("inf"), 0.0, 0, 0
 
     if resume:
         ckpt = torch.load(resume, map_location=device)
@@ -128,6 +129,7 @@ def train(config_path: str, resume: str | None = None):
             scaler.load_state_dict(ckpt["scaler"])
         start_epoch   = ckpt.get("epoch", 0)
         best_score    = ckpt.get("best_score", float("inf"))
+        best_f1       = ckpt.get("best_score", 0.0)
         global_step   = ckpt.get("global_step", 0)
         if is_master:
             logger.info(f"Resumed from {resume} (epoch {start_epoch}, best_score={best_score:.4f})")
@@ -210,6 +212,9 @@ def train(config_path: str, resume: str | None = None):
                 logger.info("  → new best checkpoint saved")
             else:
                 patience += 1
+            macro_f1 = metrics.get("macro_f1", 0.0)
+            if macro_f1 > best_f1:
+                best_f1 = macro_f1
             if patience >= early_stop_patience:
                 logger.info("Early stopping.")
                 should_stop = torch.tensor(1, device=device)

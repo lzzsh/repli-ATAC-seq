@@ -3,11 +3,11 @@ log_dir: logs
 
 data:
   manifest: data/manifest.yaml
-  input_window_length: 32768
+  input_window_length: 131072
 
 augmentation:
   rc_prob: 0.5
-  shift_max: 3
+  shift_max: 1024
 
 model:
   bn_momentum: 0.1  # TF bn_momentum=0.9 → PyTorch momentum=1-0.9=0.1
@@ -16,15 +16,16 @@ loss:
   lambda_phase: 1.0
 
 training:
-  learning_rate: 0.15
+  learning_rate: 0.001
   momentum: 0.99
-  lr_decay_factor: 0.2
-  lr_patience: 16
-  min_lr: 1.0e-6
-  batch_size: 8
-  gradient_accumulation_steps: 1
+  weight_decay: 1.0e-4
+  lr_decay_factor: 0.5
+  lr_patience: 8
+  min_lr: 1.0e-7
+  batch_size: 4
+  gradient_accumulation_steps: 8
   max_epochs: 200
-  early_stopping_patience: 16
+  early_stopping_patience: 32
   gradient_clip_norm: 2.0
   mixed_precision: true
   seed: 42
