@@ -8,7 +8,7 @@ def test_model_output_shape():
     x = torch.zeros(2, 4, 32768)
     out = model(x)
     assert "rt_logits" in out
-    assert out["rt_logits"].shape == (2, 28, 4)
+    assert out["rt_logits"].shape == (2, 224, 4)
 
 def test_rt_class_loss():
     criterion = RTClassLoss()

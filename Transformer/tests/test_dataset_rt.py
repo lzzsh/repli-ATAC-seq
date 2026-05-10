@@ -22,16 +22,16 @@ def _make_df(n_bins=600, bin_size=1024):
 def test_item_rt_labels_shape():
     sp = _make_sp()
     mock_genome = MagicMock()
-    mock_genome.chrom_size.return_value = 131072 * 2
-    mock_genome.fetch.return_value = "A" * 131072
-    mock_df = _make_df()
+    mock_genome.chrom_size.return_value = 196608 * 2
+    mock_genome.fetch.return_value = "A" * 196608
+    mock_df = _make_df(n_bins=400)
     with patch("src.data.dataset.GenomeSequence", return_value=mock_genome), \
          patch("src.data.dataset.load_labels", return_value=mock_df):
-        ds = RepliSeqDataset([sp], "train", window_size=131072, rc_prob=0.0)
+        ds = RepliSeqDataset([sp], "train", window_size=196608, rc_prob=0.0)
     assert len(ds) > 0
     item = ds[0]
     assert "rt_labels" in item
-    assert item["rt_labels"].shape == (124,)
+    assert item["rt_labels"].shape == (1504,)
     assert item["rt_labels"].dtype == torch.long
 
 def test_item_no_phase_labels_key():

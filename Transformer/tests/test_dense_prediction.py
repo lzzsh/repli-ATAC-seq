@@ -41,22 +41,22 @@ def _make_mock_species_config():
 def test_dataset_item_rt_labels_shape():
     sp = _make_mock_species_config()
     mock_genome = MagicMock()
-    mock_genome.chrom_size.return_value = 131072 * 2
-    mock_genome.fetch.return_value = "A" * 131072
+    mock_genome.chrom_size.return_value = 196608 * 2
+    mock_genome.fetch.return_value = "A" * 196608
     classes = ["ES", "MS", "LS", "NR"]
     mock_df = pd.DataFrame([{
         "chrom": "chr01",
         "start": i * 1024,
         "end": (i + 1) * 1024,
         "RT_class": classes[i % 4],
-    } for i in range(131072 * 2 // 1024)])
+    } for i in range(196608 * 2 // 1024)])
     with patch("src.data.dataset.GenomeSequence", return_value=mock_genome), \
          patch("src.data.dataset.load_labels", return_value=mock_df):
-        ds = RepliSeqDataset([sp], "train", window_size=131072, rc_prob=0.0)
+        ds = RepliSeqDataset([sp], "train", window_size=196608, rc_prob=0.0)
     assert len(ds) > 0
     item = ds[0]
-    assert item["one_hot"].shape == (4, 131072)
-    assert item["rt_labels"].shape == (124,)
+    assert item["one_hot"].shape == (4, 196608)
+    assert item["rt_labels"].shape == (1504,)
     assert item["rt_labels"].dtype == torch.long
 
 
