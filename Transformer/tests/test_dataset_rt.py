@@ -10,7 +10,7 @@ def _make_sp():
         train_chroms=["chr1"], val_chroms=[], test_chroms=[], species_id=0,
     )
 
-def _make_df(n_bins=400, bin_size=1024):
+def _make_df(n_bins=600, bin_size=1024):
     classes = ["ES", "MS", "LS", "NR"]
     return pd.DataFrame([{
         "chrom": "chr1",
@@ -22,16 +22,16 @@ def _make_df(n_bins=400, bin_size=1024):
 def test_item_rt_labels_shape():
     sp = _make_sp()
     mock_genome = MagicMock()
-    mock_genome.chrom_size.return_value = 32768 * 4
-    mock_genome.fetch.return_value = "A" * 32768
+    mock_genome.chrom_size.return_value = 131072 * 2
+    mock_genome.fetch.return_value = "A" * 131072
     mock_df = _make_df()
     with patch("src.data.dataset.GenomeSequence", return_value=mock_genome), \
          patch("src.data.dataset.load_labels", return_value=mock_df):
-        ds = RepliSeqDataset([sp], "train", window_size=32768, rc_prob=0.0)
+        ds = RepliSeqDataset([sp], "train", window_size=131072, rc_prob=0.0)
     assert len(ds) > 0
     item = ds[0]
     assert "rt_labels" in item
-    assert item["rt_labels"].shape == (28,)
+    assert item["rt_labels"].shape == (124,)
     assert item["rt_labels"].dtype == torch.long
 
 def test_item_no_phase_labels_key():
