@@ -142,30 +142,26 @@ def load_labels(count_tsv: str | Path, species: str, gff3_path: str | Path) -> p
 
 def load_labels_indexed(df: pd.DataFrame):
     """
-    返回一个查询函数 query(chrom, genomic_start, n_bins, model_bin_size) -> np.ndarray [n_bins, 4]
-    genomic_start: 第一个输出bin的基因组起始坐标
-    n_bins: 输出bin数量
-    model_bin_size: 模型输出bin大小（128bp）
-    标签bin大小由TSV自动推断，每个模型bin映射到其所在的标签bin。
+    Returns query(chrom, genomic_start, n_bins, model_bin_size) -> np.ndarray [n_bins] int64
+    Each model bin maps to the label bin containing its center coordinate.
+    Missing bins default to NR (3).
     """
-    cols = ["ES_log1p", "MS_log1p", "LS_log1p", "G1_log1p"]
-    n_cols = len(cols)
     grouped = {}
     for chrom, grp in df.groupby("chrom"):
         label_bin_size = int(grp["end"].iloc[0] - grp["start"].iloc[0])
         keys = grp["start"].values.astype(int)
-        vals = grp[cols].values.astype(np.float32)
+        vals = grp["RT_class"].map(RT_CLASS_MAP).fillna(3).values.astype(np.int64)
         idx_map = dict(zip(keys, vals))
-        grouped[chrom] = (label_bin_size, idx_map, n_cols)
+        grouped[chrom] = (label_bin_size, idx_map)
 
     def query(chrom: str, genomic_start: int, n_bins: int, model_bin_size: int) -> np.ndarray:
-        out = np.zeros((n_bins, n_cols), dtype=np.float32)
+        out = np.full(n_bins, RT_CLASS_MAP["NR"], dtype=np.int64)
         if chrom not in grouped:
             return out
-        label_bin_size, idx_map, nc = grouped[chrom]
+        label_bin_size, idx_map = grouped[chrom]
         for i in range(n_bins):
-            pos = genomic_start + i * model_bin_size
-            label_key = (pos // label_bin_size) * label_bin_size
+            center = genomic_start + i * model_bin_size + model_bin_size // 2
+            label_key = (center // label_bin_size) * label_bin_size
             val = idx_map.get(label_key)
             if val is not None:
                 out[i] = val
