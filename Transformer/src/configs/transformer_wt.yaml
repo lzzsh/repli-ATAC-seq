@@ -3,7 +3,7 @@ log_dir: logs
 
 data:
   manifest: data/manifest.yaml
-  input_window_length: 131072
+  input_window_length: 196608
 
 augmentation:
   rc_prob: 0.5

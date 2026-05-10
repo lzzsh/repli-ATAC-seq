@@ -37,3 +37,11 @@ def test_model_param_count():
     model = Basenji2Model()
     n = sum(p.numel() for p in model.parameters())
     assert 25_000_000 < n < 50_000_000
+
+from src.data.dataset import RepliSeqDataset
+
+def test_dataset_out_bins():
+    assert RepliSeqDataset._OUT_BINS == 1504
+
+def test_dataset_out_bin_size():
+    assert RepliSeqDataset._OUT_BIN == 128
