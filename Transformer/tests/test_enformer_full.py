@@ -33,3 +33,21 @@ def test_enformer_trunk_output_shape():
 def test_enformer_trunk_no_dilated():
     trunk = _EnformerTrunk()
     assert not hasattr(trunk, 'dilated')
+
+from src.models.model import Basenji2Model, RTClassLoss
+
+def test_model_output_shape():
+    model = Basenji2Model()
+    x = torch.zeros(1, 4, 196608)
+    out = model(x)
+    assert out["rt_logits"].shape == (1, 896, 4)
+
+def test_model_loss_finite():
+    model = Basenji2Model()
+    criterion = RTClassLoss()
+    x = torch.zeros(1, 4, 196608)
+    labels = torch.randint(0, 4, (1, 896))
+    out = model(x)
+    loss = criterion(out, {"rt_labels": labels})
+    assert torch.isfinite(loss["total"])
+    assert loss["total"].item() > 0
