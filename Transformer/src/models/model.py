@@ -170,24 +170,24 @@ class _EnformerTrunk(nn.Module):
 
 # ── Prediction Head ───────────────────────────────────────────────────────────
 class _RTHead(nn.Module):
-    """Transformer head: project → 4× self-attention → classify at 128bp resolution.
+    """Transformer head: project → 8× self-attention → classify at 128bp resolution.
 
-    Input:  [B, in_features, 992]
-    Output: [B, 992, n_classes]
+    Input:  [B, in_features, T]   (T = 1504 for 196608bp input)
+    Output: [B, T, n_classes]
     """
     def __init__(
         self,
-        in_features: int = 1536,
-        d_model: int = 256,
-        n_heads: int = 4,
-        ffn_dim: int = 1024,
-        n_layers: int = 4,
+        in_features: int = 3072,
+        d_model: int = 512,
+        n_heads: int = 8,
+        ffn_dim: int = 2048,
+        n_layers: int = 8,
         n_classes: int = 4,
         dropout: float = 0.1,
     ):
         super().__init__()
         self.proj = nn.Linear(in_features, d_model)
-        self.pos_bias = _RelativePosBias(n_heads=n_heads, max_len=992)
+        self.pos_bias = _RelativePosBias(n_heads=n_heads, max_len=1504)
         self.layers = nn.ModuleList([
             _TransformerBlock(d_model, n_heads, ffn_dim, dropout)
             for _ in range(n_layers)
@@ -196,15 +196,15 @@ class _RTHead(nn.Module):
         self.out = nn.Linear(d_model, n_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, C, 992]
-        x = x.permute(0, 2, 1)             # [B, 992, C]
-        x = self.proj(x)                    # [B, 992, d_model]
+        # x: [B, C, T]
+        x = x.permute(0, 2, 1)             # [B, T, C]
+        x = self.proj(x)                    # [B, T, d_model]
         T = x.shape[1]
         attn_bias = self.pos_bias(T)        # [n_heads, T, T]
         for layer in self.layers:
             x = layer(x, attn_bias)
-        x = self.norm(x)                    # [B, 992, d_model]
-        return self.out(x)                  # [B, 992, n_classes]
+        x = self.norm(x)
+        return self.out(x)                  # [B, T, n_classes]
 
 
 # ── Basenji2Model ─────────────────────────────────────────────────────────────
@@ -213,14 +213,14 @@ class Basenji2Model(nn.Module):
         super().__init__()
         self.trunk = _EnformerTrunk(bn_momentum=bn_momentum)
         self.head = _RTHead(
-            in_features=1536, d_model=256, n_heads=4,
-            ffn_dim=1024, n_layers=4, n_classes=4, dropout=0.1,
+            in_features=3072, d_model=512, n_heads=8,
+            ffn_dim=2048, n_layers=8, n_classes=4, dropout=0.1,
         )
 
     def forward(self, one_hot: torch.Tensor):
         # one_hot: [B, 4, L]
-        x = self.trunk(one_hot)             # [B, 1536, 992]
-        return {"rt_logits": self.head(x)}  # [B, 992, 4]
+        x = self.trunk(one_hot)             # [B, 3072, T]
+        return {"rt_logits": self.head(x)}  # [B, T, 4]
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
