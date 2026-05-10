@@ -170,17 +170,43 @@ class _Basenji2Trunk(nn.Module):
 
 # ── Prediction Head ───────────────────────────────────────────────────────────
 class _RTHead(nn.Module):
-    """AvgPool 8× to 1024bp bins, then linear classifier."""
-    def __init__(self, d_model: int, n_classes: int = 4):
+    """Transformer head: AvgPool8 → project → 4× self-attention → classify.
+
+    Input:  [B, in_features, 992]
+    Output: [B, 124, n_classes]
+    """
+    def __init__(
+        self,
+        in_features: int = 1536,
+        d_model: int = 256,
+        n_heads: int = 4,
+        ffn_dim: int = 1024,
+        n_layers: int = 4,
+        n_classes: int = 4,
+        dropout: float = 0.1,
+    ):
         super().__init__()
         self.pool = nn.AvgPool1d(kernel_size=8, stride=8)
+        self.proj = nn.Linear(in_features, d_model)
+        self.pos_bias = _RelativePosBias(n_heads=n_heads, max_len=124)
+        self.layers = nn.ModuleList([
+            _TransformerBlock(d_model, n_heads, ffn_dim, dropout)
+            for _ in range(n_layers)
+        ])
+        self.norm = nn.LayerNorm(d_model)
         self.out = nn.Linear(d_model, n_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, C, 992]
-        x = self.pool(x)          # [B, C, 124]
-        x = x.permute(0, 2, 1)   # [B, 124, C]
-        return self.out(x)        # [B, 124, 4]
+        x = self.pool(x)                    # [B, C, 124]
+        x = x.permute(0, 2, 1)             # [B, 124, C]
+        x = self.proj(x)                    # [B, 124, d_model]
+        T = x.shape[1]
+        attn_bias = self.pos_bias(T)        # [n_heads, T, T]
+        for layer in self.layers:
+            x = layer(x, attn_bias)
+        x = self.norm(x)                    # [B, 124, d_model]
+        return self.out(x)                  # [B, 124, n_classes]
 
 
 # ── Basenji2Model ─────────────────────────────────────────────────────────────
@@ -188,11 +214,14 @@ class Basenji2Model(nn.Module):
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _Basenji2Trunk(bn_momentum=bn_momentum)
-        self.head = _RTHead(1536, n_classes=4)
+        self.head = _RTHead(
+            in_features=1536, d_model=256, n_heads=4,
+            ffn_dim=1024, n_layers=4, n_classes=4, dropout=0.1,
+        )
 
     def forward(self, one_hot: torch.Tensor):
         # one_hot: [B, 4, L]
-        x = self.trunk(one_hot)   # [B, 1536, 992]
+        x = self.trunk(one_hot)             # [B, 1536, 992]
         return {"rt_logits": self.head(x)}  # [B, 124, 4]
 
 

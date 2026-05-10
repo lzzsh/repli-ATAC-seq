@@ -40,3 +40,21 @@ def test_transformer_block_residual():
     attn_bias = bias(seq_len=3)
     out = block(x, attn_bias)
     assert out.shape == (1, 3, 4)
+
+from src.models.model import Basenji2Model, RTClassLoss
+
+def test_model_output_shape_transformer_head():
+    model = Basenji2Model()
+    x = torch.zeros(2, 4, 131072)
+    out = model(x)
+    assert out["rt_logits"].shape == (2, 124, 4)
+
+def test_model_loss_finite():
+    model = Basenji2Model()
+    criterion = RTClassLoss()
+    x = torch.zeros(2, 4, 131072)
+    labels = torch.randint(0, 4, (2, 124))
+    out = model(x)
+    loss = criterion(out, {"rt_labels": labels})
+    assert torch.isfinite(loss["total"])
+    assert loss["total"].item() > 0
