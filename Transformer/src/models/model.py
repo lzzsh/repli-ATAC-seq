@@ -116,44 +116,37 @@ class _Basenji2Trunk(nn.Module):
 
 
 # ── Prediction Head ───────────────────────────────────────────────────────────
-class _SharedHead(nn.Module):
-    """Linear(1536→4), matching Basenji2 paper's final conv1×1 with linear output."""
-    def __init__(self, d_model: int, n_tracks: int = 4):
+class _RTHead(nn.Module):
+    """AvgPool 8× to 1024bp bins, then linear classifier."""
+    def __init__(self, d_model: int, n_classes: int = 4):
         super().__init__()
-        self.out = nn.Linear(d_model, n_tracks)
+        self.pool = nn.AvgPool1d(kernel_size=8, stride=8)
+        self.out = nn.Linear(d_model, n_classes)
 
-    def forward(self, x: torch.Tensor):
-        return self.out(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [B, C, 224]
+        x = self.pool(x)          # [B, C, 28]
+        x = x.permute(0, 2, 1)   # [B, 28, C]
+        return self.out(x)        # [B, 28, 4]
 
 
 # ── Basenji2Model ─────────────────────────────────────────────────────────────
 class Basenji2Model(nn.Module):
-    # trunk outputs 224 bins at 128bp resolution after cropping
-    # center 128 bins (48:176) = 16384bp centered on the 32kb input
-    # 32768bp / 128bp = 256 bins; crop 16 each side → 224 bins; center = bin 112 ± 64
-    _CENTER_START = 48
-    _CENTER_END   = 176  # 128 bins × 128bp = 16384bp
-
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _Basenji2Trunk(bn_momentum=bn_momentum)
-        self.head = _SharedHead(1536, n_tracks=4)
+        self.head = _RTHead(1536, n_classes=4)
 
     def forward(self, one_hot: torch.Tensor):
         # one_hot: [B, 4, L]
-        x = self.trunk(one_hot)                                           # [B, 1536, 224]
-        x = x[:, :, self._CENTER_START:self._CENTER_END]                  # [B, 1536, 128]
-        B, C, T = x.shape
-        phase_pred = self.head(x.permute(0, 2, 1).reshape(B * T, C))     # [B*128, 4]
-        phase_pred = phase_pred.reshape(B, T, -1)                         # [B, 128, 4]
-        return {"phase_pred": phase_pred}
+        x = self.trunk(one_hot)   # [B, 1536, 224]
+        return {"rt_logits": self.head(x)}  # [B, 28, 4]
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
-class PhaseLoss(nn.Module):
-    """MSE on raw count targets, matching params_rt.json loss=mse."""
+class RTClassLoss(nn.Module):
     def forward(self, outputs: dict, batch: dict) -> dict:
-        pred = outputs["phase_pred"]
-        true = batch["phase_labels"]
-        loss = F.mse_loss(pred, true)
-        return {"total": loss, "phase": loss}
+        logits = outputs["rt_logits"]          # [B, 28, 4]
+        labels = batch["rt_labels"]            # [B, 28] long
+        loss = F.cross_entropy(logits.reshape(-1, 4), labels.reshape(-1))
+        return {"total": loss, "rt": loss}
