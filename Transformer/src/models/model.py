@@ -76,6 +76,40 @@ class _RelativePosBias(nn.Module):
         return self.bias[:, table_idx]                          # [n_heads, T, T]
 
 
+
+# ── Transformer block ─────────────────────────────────────────────────────────
+class _TransformerBlock(nn.Module):
+    """Single Transformer layer: multi-head self-attention + FFN, with relative pos bias."""
+
+    def __init__(self, d_model: int, n_heads: int, ffn_dim: int, dropout: float = 0.1):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(
+            d_model, n_heads, dropout=dropout, batch_first=True
+        )
+        self.ff1 = nn.Linear(d_model, ffn_dim)
+        self.ff2 = nn.Linear(ffn_dim, d_model)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.drop = nn.Dropout(dropout)
+        self.act = nn.GELU()
+
+    def forward(self, x: torch.Tensor, attn_bias: torch.Tensor) -> torch.Tensor:
+        # attn_bias: [n_heads, T, T] → expand to [B*n_heads, T, T]
+        B, T, _ = x.shape
+        n_heads = attn_bias.shape[0]
+        mask = attn_bias.unsqueeze(0).expand(B, -1, -1, -1).reshape(B * n_heads, T, T)
+
+        # pre-norm attention
+        h = self.norm1(x)
+        h, _ = self.attn(h, h, h, attn_mask=mask, need_weights=False)
+        x = x + self.drop(h)
+
+        # pre-norm FFN
+        h = self.norm2(x)
+        h = self.ff2(self.drop(self.act(self.ff1(h))))
+        return x + self.drop(h)
+
+
 # ── Basenji2 trunk ────────────────────────────────────────────────────────────
 class _Basenji2Trunk(nn.Module):
     """
