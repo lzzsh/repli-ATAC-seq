@@ -50,13 +50,10 @@ def fetch_one_hot(genome: GenomeSequence, chrom: str, start: int, end: int,
     return one_hot_encode(seq)  # [4, L]
 
 
-def rc_average(model: Basenji2Model, batch: torch.Tensor,
-               per_position: bool = False) -> torch.Tensor:
+def rc_average(model: Basenji2Model, batch: torch.Tensor) -> torch.Tensor:
     """Average forward and reverse-complement predictions. batch: [B, 4, L]."""
     with torch.no_grad():
-        fwd = model(batch, per_position=per_position)["phase_pred"]
+        fwd = model(batch)["phase_pred"]                        # [B, T, 4]
         rc = torch.flip(batch, dims=[-1])[:, [3, 2, 1, 0], :]
-        rev = model(rc, per_position=per_position)["phase_pred"]
-        if per_position:
-            rev = torch.flip(rev, dims=[1])
+        rev = torch.flip(model(rc)["phase_pred"], dims=[1])     # flip bin dim
     return (fwd + rev) / 2

@@ -64,11 +64,11 @@ class _Basenji2Trunk(nn.Module):
       1. conv_block:       288 filters, k=15, pool=2
       2. conv_tower:       6 layers, filters 339→768 (×1.1776), k=5, pool=2
       3. dilated_residual: 11 layers, bottleneck 768→384→768, rate_mult=1.5, dropout=0.3
-      4. Cropping1D:       crop 16 on each side
+      4. Cropping1D:       crop 16 on each side  (at 128bp resolution)
       5. conv_block:       1536 filters, dropout=0.05
 
     Input:  [B, 4, L]      (one-hot, L=32768)
-    Output: [B, 1536, 224] (per-bin features)
+    Output: [B, 1536, 224] (per-bin features, 224 bins × 128bp)
     """
 
     # conv tower filter schedule: 339 * 1.1776^i, rounded, 6 layers
@@ -111,10 +111,8 @@ class _Basenji2Trunk(nn.Module):
         x = self.stem(x)
         x = self.tower(x)
         x = self.dilated(x)
-        # crop 16 bins on each side → [B, 768, 224]
-        x = x[:, :, self.crop:-self.crop]
-        # bottleneck → [B, 1536, 224]
-        return self.bottleneck(x)
+        x = x[:, :, self.crop:-self.crop]  # crop 16 → [B, 768, 224]
+        return self.bottleneck(x)          # → [B, 1536, 224]
 
 
 # ── Prediction Head ───────────────────────────────────────────────────────────
@@ -130,6 +128,12 @@ class _SharedHead(nn.Module):
 
 # ── Basenji2Model ─────────────────────────────────────────────────────────────
 class Basenji2Model(nn.Module):
+    # trunk outputs 224 bins at 128bp resolution after cropping
+    # center 128 bins (48:176) = 16384bp centered on the 32kb input
+    # 32768bp / 128bp = 256 bins; crop 16 each side → 224 bins; center = bin 112 ± 64
+    _CENTER_START = 48
+    _CENTER_END   = 176  # 128 bins × 128bp = 16384bp
+
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _Basenji2Trunk(bn_momentum=bn_momentum)
@@ -137,10 +141,11 @@ class Basenji2Model(nn.Module):
 
     def forward(self, one_hot: torch.Tensor):
         # one_hot: [B, 4, L]
-        x = self.trunk(one_hot)          # [B, 1536, 224]
-        x = x.permute(0, 2, 1)          # [B, 224, 1536]
-        B, T, C = x.shape
-        phase_pred = self.head(x.reshape(B * T, C)).reshape(B, T, -1)  # [B, 224, 4]
+        x = self.trunk(one_hot)                                           # [B, 1536, 224]
+        x = x[:, :, self._CENTER_START:self._CENTER_END]                  # [B, 1536, 128]
+        B, C, T = x.shape
+        phase_pred = self.head(x.permute(0, 2, 1).reshape(B * T, C))     # [B*128, 4]
+        phase_pred = phase_pred.reshape(B, T, -1)                         # [B, 128, 4]
         return {"phase_pred": phase_pred}
 
 

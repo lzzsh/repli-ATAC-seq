@@ -39,9 +39,13 @@ def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
 
 # ── dataset ───────────────────────────────────────────────────────────────────
 class RepliSeqDataset(Dataset):
-    # trunk crops 16 bins each side → output covers bins [16, 240) of the 256-bin window
-    _CROP = 16
-    _OUT_BINS = 224  # 256 - 2*16
+    # trunk outputs 224 bins at 128bp resolution after cropping 16 each side.
+    # Center 128 bins (48:176) = 16384bp centered on the 32kb window are used for loss.
+    # Stride = 16384bp so adjacent samples' center windows do not overlap.
+    _BIN_SIZE     = 128    # bp per output bin
+    _CENTER_START = 48     # first of the 128 center bins in cropped space
+    _CENTER_BINS  = 128    # bins used for loss / labels  (128 × 128bp = 16384bp)
+    _STRIDE       = _CENTER_BINS * _BIN_SIZE  # 16384bp
 
     def __init__(
         self,
@@ -52,7 +56,6 @@ class RepliSeqDataset(Dataset):
         shift_max: int = 0,
     ):
         self.window_size = window_size
-        self.bin_size = window_size // 256  # 32768/256 = 128
         self.rc_prob = rc_prob if split == "train" else 0.0
         self.shift_max = shift_max if split == "train" else 0
         self.samples: list[dict] = []
@@ -66,15 +69,26 @@ class RepliSeqDataset(Dataset):
             df = df[df["chrom"].isin(chroms)].reset_index(drop=True)
             self._label_queries[sp.name] = load_labels_indexed(df)
 
+            # stride = 16384bp (= _CENTER_BINS × _BIN_SIZE), non-overlapping center windows.
+            # Only keep windows whose center 128-bin region has at least one annotated bin.
+            annotated = set(zip(df["chrom"], df["start"]))
             for chrom in chroms:
                 chrom_size = self.genomes[sp.name].chrom_size(chrom)
-                for win_start in range(0, chrom_size - window_size + 1, window_size):
-                    self.samples.append({
-                        "species": sp.name,
-                        "species_id": sp.species_id,
-                        "chrom": chrom,
-                        "win_start": win_start,
-                    })
+                for win_start in range(0, chrom_size - window_size + 1, self._STRIDE):
+                    center_offset = win_start + (16 + self._CENTER_START) * self._BIN_SIZE
+                    # check if any of the 128 center bins has a label
+                    has_label = any(
+                        (chrom, (center_offset + i * self._BIN_SIZE) // self._BIN_SIZE * self._BIN_SIZE)
+                        in annotated
+                        for i in range(self._CENTER_BINS)
+                    )
+                    if has_label:
+                        self.samples.append({
+                            "species": sp.name,
+                            "species_id": sp.species_id,
+                            "chrom": chrom,
+                            "win_start": win_start,
+                        })
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -90,15 +104,18 @@ class RepliSeqDataset(Dataset):
         if rc:
             seq = reverse_complement(seq)
 
-        bin_offset = win_start // self.bin_size + self._CROP
-        labels = self._label_queries[s["species"]](s["chrom"], bin_offset, self._OUT_BINS)
+        # center 128 output bins start at: win_start + (16 crop bins + 48) × 128bp
+        center_offset = win_start + (16 + self._CENTER_START) * self._BIN_SIZE
+        labels = self._label_queries[s["species"]](
+            s["chrom"], center_offset, self._CENTER_BINS, self._BIN_SIZE
+        )  # [128, 4]
         if rc:
             labels = labels[::-1].copy()
 
         return {
             "one_hot": torch.tensor(one_hot_encode(seq), dtype=torch.float32),
             "species_id": torch.tensor(s["species_id"], dtype=torch.long),
-            "phase_labels": torch.tensor(labels, dtype=torch.float32),
+            "phase_labels": torch.tensor(labels, dtype=torch.float32),  # [128, 4]
         }
 
 

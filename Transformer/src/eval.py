@@ -70,8 +70,13 @@ def _run_inference(model, loader, device):
             batch = {k: v.to(device) for k, v in batch.items()}
             out = model(batch["one_hot"])
             pp.append(out["phase_pred"].cpu().numpy())
-            pt.append(batch["phase_labels"].cpu().numpy())
-            wt.append(batch["wrt"].cpu().numpy())
+            pt_np = batch["phase_labels"].cpu().numpy()
+            pt.append(pt_np)
+            # derive wrt from labels on the fly
+            linear = np.expm1(np.clip(pt_np.reshape(-1, 4), 0, None))
+            eps = 1e-6
+            wrt = (0.5 * linear[:, 1] + linear[:, 2]) / (linear.sum(axis=1) + eps)
+            wt.append(wrt.reshape(pt_np.shape[0], -1))
     return (np.concatenate(pp), np.concatenate(pt), np.concatenate(wt))
 
 

@@ -112,6 +112,8 @@ def load_labels(count_tsv: str | Path, species: str, gff3_path: str | Path) -> p
     Boundary bins (ESMS/MSLS/ESLS/ESMSLS) are filtered out.
     """
     df = pd.read_csv(count_tsv, sep="\t")
+    if "#chrom" in df.columns:
+        df = df.rename(columns={"#chrom": "chrom"})
     for col in ["chrom", "start", "end", "ES_count", "MS_count", "LS_count", "G1_count"]:
         assert col in df.columns, f"Missing column: {col}"
 
@@ -140,28 +142,31 @@ def load_labels(count_tsv: str | Path, species: str, gff3_path: str | Path) -> p
 
 def load_labels_indexed(df: pd.DataFrame):
     """
-    返回一个查询函数 query(chrom, bin_start_idx, n_bins) -> np.ndarray [n_bins, 4]
-    bin_start_idx: 该染色体上的bin序号（0-based，即 genomic_start // bin_size）
-    n_bins: 需要取的bin数量
-    缺失bin返回全零行。
+    返回一个查询函数 query(chrom, genomic_start, n_bins, model_bin_size) -> np.ndarray [n_bins, 4]
+    genomic_start: 第一个输出bin的基因组起始坐标
+    n_bins: 输出bin数量
+    model_bin_size: 模型输出bin大小（128bp）
+    标签bin大小由TSV自动推断，每个模型bin映射到其所在的标签bin。
     """
     cols = ["ES_log1p", "MS_log1p", "LS_log1p", "G1_log1p"]
     n_cols = len(cols)
     grouped = {}
     for chrom, grp in df.groupby("chrom"):
-        bin_size = int(grp["end"].iloc[0] - grp["start"].iloc[0])
-        keys = (grp["start"].values // bin_size).astype(int)
+        label_bin_size = int(grp["end"].iloc[0] - grp["start"].iloc[0])
+        keys = grp["start"].values.astype(int)
         vals = grp[cols].values.astype(np.float32)
         idx_map = dict(zip(keys, vals))
-        grouped[chrom] = (bin_size, idx_map, n_cols)
+        grouped[chrom] = (label_bin_size, idx_map, n_cols)
 
-    def query(chrom: str, bin_start_idx: int, n_bins: int) -> np.ndarray:
+    def query(chrom: str, genomic_start: int, n_bins: int, model_bin_size: int) -> np.ndarray:
         out = np.zeros((n_bins, n_cols), dtype=np.float32)
         if chrom not in grouped:
             return out
-        bin_size, idx_map, nc = grouped[chrom]
+        label_bin_size, idx_map, nc = grouped[chrom]
         for i in range(n_bins):
-            val = idx_map.get(bin_start_idx + i)
+            pos = genomic_start + i * model_bin_size
+            label_key = (pos // label_bin_size) * label_bin_size
+            val = idx_map.get(label_key)
             if val is not None:
                 out[i] = val
         return out

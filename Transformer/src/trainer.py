@@ -35,11 +35,12 @@ def _validate(model, loader, criterion, device) -> dict:
             n_batches += 1
             pp.append(out["phase_pred"].cpu().numpy())
             pt.append(batch["phase_labels"].cpu().numpy())
-            pt_np = batch["phase_labels"].cpu().numpy().reshape(-1, 4)
+            pt_np = batch["phase_labels"].cpu().numpy().reshape(-1, 4)  # [B*8, 4]
             linear = np.expm1(np.clip(pt_np, 0, None))
             eps = 1e-6
             wrt = (0.5 * linear[:, 1] + linear[:, 2]) / (linear.sum(axis=1) + eps)
-            wt_list.append(wrt.reshape(batch["phase_labels"].shape[0], -1))
+            B = batch["phase_labels"].shape[0]
+            wt_list.append(wrt.reshape(B, -1))
 
     metrics = evaluate_predictions(
         np.concatenate(pp),
