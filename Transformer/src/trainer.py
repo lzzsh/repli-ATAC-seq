@@ -13,16 +13,16 @@ import yaml
 import logging
 
 from .data.dataset import RepliSeqDataset, load_manifest
-from .models.model import Basenji2Model, PhaseLoss
-from .eval import evaluate_predictions, compute_wrt_from_phase_pred
+from .models.model import Basenji2Model, RTClassLoss
+from .eval import evaluate_predictions
 
 logger = logging.getLogger(__name__)
 
 
 def _validate(model, loader, criterion, device) -> dict:
     model.eval()
-    pp, pt, wt_list = [], [], []
-    total_loss = phase_loss = 0.0
+    pp, pt = [], []
+    total_loss = rt_loss = 0.0
     n_batches = 0
     with torch.no_grad():
         for batch in loader:
@@ -31,24 +31,14 @@ def _validate(model, loader, criterion, device) -> dict:
                 if isinstance(model, DDP) else model(batch["one_hot"])
             losses = criterion(out, batch)
             total_loss += losses["total"].item()
-            phase_loss += losses["phase"].item()
+            rt_loss += losses["rt"].item()
             n_batches += 1
-            pp.append(out["phase_pred"].cpu().numpy())
-            pt.append(batch["phase_labels"].cpu().numpy())
-            pt_np = batch["phase_labels"].cpu().numpy().reshape(-1, 4)  # [B*8, 4]
-            linear = np.expm1(np.clip(pt_np, 0, None))
-            eps = 1e-6
-            wrt = (0.5 * linear[:, 1] + linear[:, 2]) / (linear.sum(axis=1) + eps)
-            B = batch["phase_labels"].shape[0]
-            wt_list.append(wrt.reshape(B, -1))
+            pp.append(out["rt_logits"].cpu().numpy())
+            pt.append(batch["rt_labels"].cpu().numpy())
 
-    metrics = evaluate_predictions(
-        np.concatenate(pp),
-        np.concatenate(pt),
-        np.concatenate(wt_list),
-    )
+    metrics = evaluate_predictions(np.concatenate(pp), np.concatenate(pt))
     metrics["val_loss_total"] = total_loss / n_batches
-    metrics["val_loss_phase"] = phase_loss / n_batches
+    metrics["val_loss_rt"] = rt_loss / n_batches
     return metrics
 
 
@@ -106,7 +96,7 @@ def train(config_path: str, resume: str | None = None):
     if ddp:
         model = DDP(model, device_ids=[local_rank])
 
-    criterion = PhaseLoss()
+    criterion = RTClassLoss()
 
     optimizer = torch.optim.SGD(
         model.parameters(),
@@ -157,7 +147,7 @@ def train(config_path: str, resume: str | None = None):
             train_sampler.set_epoch(epoch)
         model.train()
         optimizer.zero_grad()
-        epoch_loss_total = epoch_loss_phase = 0.0
+        epoch_loss_total = epoch_loss_rt = 0.0
         epoch_batches = 0
         t0 = time.time()
         for batch in train_loader:
@@ -167,7 +157,7 @@ def train(config_path: str, resume: str | None = None):
                 losses = criterion(out, batch)
             scaler.scale(losses["total"] / accum).backward()
             epoch_loss_total += losses["total"].item()
-            epoch_loss_phase += losses["phase"].item()
+            epoch_loss_rt += losses["rt"].item()
             epoch_batches += 1
             global_step += 1
             if global_step % accum == 0:
@@ -181,7 +171,7 @@ def train(config_path: str, resume: str | None = None):
         if is_master:
             train_loss_total = epoch_loss_total / epoch_batches
             writer.add_scalar("train/loss_total", train_loss_total, epoch + 1)
-            writer.add_scalar("train/loss_phase", epoch_loss_phase / epoch_batches, epoch + 1)
+            writer.add_scalar("train/loss_rt", epoch_loss_rt / epoch_batches, epoch + 1)
             writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], epoch + 1)
 
             metrics = _validate(model, val_loader, criterion, device)
@@ -189,18 +179,18 @@ def train(config_path: str, resume: str | None = None):
             scheduler.step(val_loss)
 
             writer.add_scalar("val/loss_total", val_loss, epoch + 1)
-            writer.add_scalar("val/loss_phase", metrics["val_loss_phase"], epoch + 1)
+            writer.add_scalar("val/loss_rt", metrics["val_loss_rt"], epoch + 1)
             for k, v in metrics.items():
                 if isinstance(v, float) and not k.startswith("val_loss"):
                     writer.add_scalar(f"val/{k}", v, epoch + 1)
             logger.info(
                 f"epoch={epoch+1} time={time.time()-t0:.0f}s "
                 f"train_loss={train_loss_total:.4f} val_loss={val_loss:.4f} "
-                f"wrt={metrics.get('wrt_pearson', float('nan')):.4f} "
-                f"ES={metrics.get('phase_pearson_ES', float('nan')):.4f} "
-                f"MS={metrics.get('phase_pearson_MS', float('nan')):.4f} "
-                f"LS={metrics.get('phase_pearson_LS', float('nan')):.4f} "
-                f"G1={metrics.get('phase_pearson_G1', float('nan')):.4f}"
+                f"macro_f1={metrics.get('macro_f1', float('nan')):.4f} "
+                f"acc_ES={metrics.get('acc_ES', float('nan')):.4f} "
+                f"acc_MS={metrics.get('acc_MS', float('nan')):.4f} "
+                f"acc_LS={metrics.get('acc_LS', float('nan')):.4f} "
+                f"acc_NR={metrics.get('acc_NR', float('nan')):.4f}"
             )
             if val_loss < best_score:
                 best_score = val_loss
