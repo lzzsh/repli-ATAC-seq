@@ -57,6 +57,33 @@ class _DilatedResidual(nn.Module):
         return x + self.conv2(self.conv1(x))
 
 
+# ── Attention pooling ─────────────────────────────────────────────────────────
+class _AttnPool(nn.Module):
+    """Attention pooling: replaces MaxPool. Learns softmax weights per position.
+
+    For each pool window of size `pool_size`, computes a scalar logit per position
+    via a linear layer, applies softmax, then returns the weighted sum of features.
+
+    Input:  [B, C, L]
+    Output: [B, C, L // pool_size]
+    """
+    def __init__(self, in_channels: int, pool_size: int = 2):
+        super().__init__()
+        self.pool_size = pool_size
+        self.weight = nn.Linear(in_channels, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, C, L = x.shape
+        L_trunc = (L // self.pool_size) * self.pool_size
+        x = x[:, :, :L_trunc]                              # [B, C, L_trunc]
+        x = x.reshape(B, C, L_trunc // self.pool_size, self.pool_size)
+        x_t = x.permute(0, 2, 3, 1)                        # [B, L//p, p, C]
+        w = self.weight(x_t)                                # [B, L//p, p, 1]
+        w = torch.softmax(w, dim=2)
+        out = (x_t * w).sum(dim=2)                          # [B, L//p, C]
+        return out.permute(0, 2, 1)                         # [B, C, L//p]
+
+
 # ── Relative positional bias ──────────────────────────────────────────────────
 class _RelativePosBias(nn.Module):
     """Learnable relative positional bias added to attention logits (Enformer-style).
