@@ -31,7 +31,7 @@ def test_item_rt_labels_shape():
     assert len(ds) > 0
     item = ds[0]
     assert "rt_labels" in item
-    assert item["rt_labels"].shape == (1504,)
+    assert item["rt_labels"].shape == (896,)
     assert item["rt_labels"].dtype == torch.long
 
 def test_item_no_phase_labels_key():
