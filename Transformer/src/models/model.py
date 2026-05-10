@@ -140,59 +140,48 @@ class _TransformerBlock(nn.Module):
 # ── Enformer trunk ────────────────────────────────────────────────────────────
 class _EnformerTrunk(nn.Module):
     """
-    Enformer-style trunk at 196608bp input:
-      1. conv_block:       288 filters, k=15, pool=2
-      2. conv_tower:       6 layers, filters 339→768 (×1.1776), k=5, pool=2
-      3. dilated_residual: 11 layers, bottleneck 768→384→768, rate_mult=1.5, dropout=0.4
-      4. Cropping1D:       crop 16 on each side  (at 128bp resolution)
-      5. conv_block:       3072 filters, dropout=0.05
+    Enformer trunk at 196608bp input:
+      1. conv_block + AttnPool2: 4→288, k=15
+      2. conv_tower + AttnPool2: 6 layers, filters 339→768 (×1.1776), k=5
+      3. Cropping1D: crop 320 on each side (at 128bp resolution)
+      4. conv_block: 768→1536, k=1, dropout=0.05
 
     Input:  [B, 4, 196608]
-    Output: [B, 3072, 1504]  (1504 bins × 128bp, after crop-16 each side)
+    Output: [B, 1536, 896]  (896 bins × 128bp, after crop-320 each side)
     """
 
-    # conv tower filter schedule: 339 * 1.1776^i, rounded, 6 layers
-    _TOWER_FILTERS = [int(np.round(339 * (1.1776 ** i))) for i in range(6)]  # [339,399,470,554,652,768]
+    _TOWER_FILTERS = [int(np.round(339 * (1.1776 ** i))) for i in range(6)]
 
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
 
-        # 1. stem conv
-        self.stem = _ConvBlock(4, 288, kernel_size=15, pool_size=2, bn_momentum=bn_momentum)
+        # 1. stem: conv + attn pool
+        self.stem_conv = _ConvBlock(4, 288, kernel_size=15, bn_momentum=bn_momentum)
+        self.stem_pool = _AttnPool(288, pool_size=2)
 
-        # 2. conv tower (6 layers, each pool=2 → total 64x downsample with stem)
-        tower = []
+        # 2. conv tower: 6 layers, each conv + attn pool
+        tower_convs, tower_pools = [], []
         in_ch = 288
         for out_ch in self._TOWER_FILTERS:
-            tower.append(_ConvBlock(in_ch, out_ch, kernel_size=5, pool_size=2, bn_momentum=bn_momentum))
+            tower_convs.append(_ConvBlock(in_ch, out_ch, kernel_size=5, bn_momentum=bn_momentum))
+            tower_pools.append(_AttnPool(out_ch, pool_size=2))
             in_ch = out_ch
-        self.tower = nn.Sequential(*tower)
+        self.tower_convs = nn.ModuleList(tower_convs)
+        self.tower_pools = nn.ModuleList(tower_pools)
 
-        # 3. dilated residual tower (11 layers, bottleneck 768→384→768, rate_mult=1.5)
-        dil_blocks = []
-        rate = 1.0
-        for _ in range(11):
-            dil_blocks.append(_DilatedResidual(
-                in_ch=768, filters=384, kernel_size=3,
-                dilation=int(np.round(rate)),
-                dropout=0.4, bn_momentum=bn_momentum,
-            ))
-            rate *= 1.5
-        self.dilated = nn.Sequential(*dil_blocks)
+        # 3. cropping (320 on each side) — handled in forward
+        self.crop = 320
 
-        # 4. cropping (16 on each side) — handled in forward
-        self.crop = 16
-
-        # 5. bottleneck conv (768 → 3072)
-        self.bottleneck = _ConvBlock(768, 3072, kernel_size=1, dropout=0.05, bn_momentum=bn_momentum)
+        # 4. bottleneck conv (768 → 1536)
+        self.bottleneck = _ConvBlock(768, 1536, kernel_size=1, dropout=0.05, bn_momentum=bn_momentum)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, 4, L]
-        x = self.stem(x)
-        x = self.tower(x)
-        x = self.dilated(x)
-        x = x[:, :, self.crop:-self.crop]  # crop 16 → [B, 768, L/128-32]
-        return self.bottleneck(x)          # → [B, 3072, L/128-32]
+        x = self.stem_pool(self.stem_conv(x))
+        for conv, pool in zip(self.tower_convs, self.tower_pools):
+            x = pool(conv(x))
+        x = x[:, :, self.crop:-self.crop]  # crop 320 → [B, 768, 896]
+        return self.bottleneck(x)          # → [B, 1536, 896]
 
 
 # ── Prediction Head ───────────────────────────────────────────────────────────

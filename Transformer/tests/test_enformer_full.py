@@ -20,3 +20,16 @@ def test_attn_pool_weights_sum_to_one():
     out = pool(x)
     assert out.shape == (1, 4, 4)
     assert torch.isfinite(out).all()
+
+from src.models.model import _EnformerTrunk
+
+def test_enformer_trunk_output_shape():
+    trunk = _EnformerTrunk()
+    x = torch.zeros(1, 4, 196608)
+    out = trunk(x)
+    # 196608/128=1536 bins, crop 320 each side → 896, bottleneck → 1536 ch
+    assert out.shape == (1, 1536, 896)
+
+def test_enformer_trunk_no_dilated():
+    trunk = _EnformerTrunk()
+    assert not hasattr(trunk, 'dilated')
