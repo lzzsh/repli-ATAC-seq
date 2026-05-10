@@ -110,18 +110,18 @@ class _TransformerBlock(nn.Module):
         return x + self.drop(h)
 
 
-# ── Basenji2 trunk ────────────────────────────────────────────────────────────
-class _Basenji2Trunk(nn.Module):
+# ── Enformer trunk ────────────────────────────────────────────────────────────
+class _EnformerTrunk(nn.Module):
     """
-    Basenji2 trunk at 131072bp input:
+    Enformer-style trunk at 196608bp input:
       1. conv_block:       288 filters, k=15, pool=2
       2. conv_tower:       6 layers, filters 339→768 (×1.1776), k=5, pool=2
-      3. dilated_residual: 11 layers, bottleneck 768→384→768, rate_mult=1.5, dropout=0.3
+      3. dilated_residual: 11 layers, bottleneck 768→384→768, rate_mult=1.5, dropout=0.4
       4. Cropping1D:       crop 16 on each side  (at 128bp resolution)
-      5. conv_block:       1536 filters, dropout=0.05
+      5. conv_block:       3072 filters, dropout=0.05
 
-    Input:  [B, 4, 131072]  (one-hot)
-    Output: [B, 1536, 992]  (992 bins × 128bp, after crop-16 each side)
+    Input:  [B, 4, 196608]
+    Output: [B, 3072, 1504]  (1504 bins × 128bp, after crop-16 each side)
     """
 
     # conv tower filter schedule: 339 * 1.1776^i, rounded, 6 layers
@@ -148,7 +148,7 @@ class _Basenji2Trunk(nn.Module):
             dil_blocks.append(_DilatedResidual(
                 in_ch=768, filters=384, kernel_size=3,
                 dilation=int(np.round(rate)),
-                dropout=0.3, bn_momentum=bn_momentum,
+                dropout=0.4, bn_momentum=bn_momentum,
             ))
             rate *= 1.5
         self.dilated = nn.Sequential(*dil_blocks)
@@ -156,16 +156,16 @@ class _Basenji2Trunk(nn.Module):
         # 4. cropping (16 on each side) — handled in forward
         self.crop = 16
 
-        # 5. bottleneck conv (768 → 1536)
-        self.bottleneck = _ConvBlock(768, 1536, kernel_size=1, dropout=0.05, bn_momentum=bn_momentum)
+        # 5. bottleneck conv (768 → 3072)
+        self.bottleneck = _ConvBlock(768, 3072, kernel_size=1, dropout=0.05, bn_momentum=bn_momentum)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, 4, L]
         x = self.stem(x)
         x = self.tower(x)
         x = self.dilated(x)
-        x = x[:, :, self.crop:-self.crop]  # crop 16 → [B, 768, 992]
-        return self.bottleneck(x)          # → [B, 1536, 992]
+        x = x[:, :, self.crop:-self.crop]  # crop 16 → [B, 768, L/128-32]
+        return self.bottleneck(x)          # → [B, 3072, L/128-32]
 
 
 # ── Prediction Head ───────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ class _RTHead(nn.Module):
 class Basenji2Model(nn.Module):
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
-        self.trunk = _Basenji2Trunk(bn_momentum=bn_momentum)
+        self.trunk = _EnformerTrunk(bn_momentum=bn_momentum)
         self.head = _RTHead(
             in_features=1536, d_model=256, n_heads=4,
             ffn_dim=1024, n_layers=4, n_classes=4, dropout=0.1,
