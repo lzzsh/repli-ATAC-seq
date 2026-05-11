@@ -37,25 +37,6 @@ class _ConvBlock(nn.Module):
         return x
 
 
-# ── Dilated residual block ────────────────────────────────────────────────────
-class _DilatedResidual(nn.Module):
-    """Bottleneck residual block: in_ch → filters → in_ch, matching original Basenji2."""
-
-    def __init__(self, in_ch: int, filters: int, kernel_size: int,
-                 dilation: int, dropout: float, bn_momentum: float):
-        super().__init__()
-        # paper order: GELU → Conv → BN (pre_norm=False)
-        self.conv1 = _ConvBlock(in_ch, filters, kernel_size,
-                                dilation=dilation, bn_momentum=bn_momentum,
-                                pre_norm=False)
-        # second conv: projects back to in_ch, gamma init zeros (InitZero trick)
-        self.conv2 = _ConvBlock(filters, in_ch, 1,
-                                dropout=dropout, bn_momentum=bn_momentum,
-                                norm_gamma_zero=True, pre_norm=False)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.conv2(self.conv1(x))
-
 
 # ── Attention pooling ─────────────────────────────────────────────────────────
 class _AttnPool(nn.Module):
@@ -140,28 +121,24 @@ class _TransformerBlock(nn.Module):
 # ── Enformer trunk ────────────────────────────────────────────────────────────
 class _EnformerTrunk(nn.Module):
     """
-    Enformer trunk at 196608bp input:
-      1. conv_block + AttnPool2: 4→288, k=15
-      2. conv_tower + AttnPool2: 6 layers, filters 339→768 (×1.1776), k=5
-      3. conv_block: 768→1536, k=1, dropout=0.05
-      4. dilated residual tower: 11 layers, k=3, dilation=[1,2,4,8,16,32,64,128,256,512,1]
-      5. Cropping1D: crop 320 on each side (at 128bp resolution)
+    Enformer conv trunk:
+      1. stem:       Conv(4→288, k=15) + AttnPool/2  → [B, 288, 98304]
+      2. conv tower: 6× Conv(k=5) + AttnPool/2       → [B, 768, 1536]
+      3. crop 320 each side                           → [B, 768, 896]
+      4. bottleneck: Conv(768→1536, k=1, drop=0.05)  → [B, 1536, 896]
 
     Input:  [B, 4, 196608]
-    Output: [B, 1536, 896]  (896 bins × 128bp, after crop-320 each side)
+    Output: [B, 1536, 896]
     """
 
     _TOWER_FILTERS = [int(np.round(339 * (1.1776 ** i))) for i in range(6)]
-    _DILATIONS     = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1]
 
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
 
-        # 1. stem: conv + attn pool
         self.stem_conv = _ConvBlock(4, 288, kernel_size=15, bn_momentum=bn_momentum)
         self.stem_pool = _AttnPool(288, pool_size=2)
 
-        # 2. conv tower: 6 layers, each conv + attn pool
         tower_convs, tower_pools = [], []
         in_ch = 288
         for out_ch in self._TOWER_FILTERS:
@@ -171,82 +148,64 @@ class _EnformerTrunk(nn.Module):
         self.tower_convs = nn.ModuleList(tower_convs)
         self.tower_pools = nn.ModuleList(tower_pools)
 
-        # 3. bottleneck conv (768 → 1536)
-        self.bottleneck = _ConvBlock(768, 1536, kernel_size=1, dropout=0.05, bn_momentum=bn_momentum)
-
-        # 4. dilated residual tower: 11 layers matching Enformer
-        self.dilated_tower = nn.ModuleList([
-            _DilatedResidual(in_ch=1536, filters=1536, kernel_size=3,
-                             dilation=d, dropout=0.3, bn_momentum=bn_momentum)
-            for d in self._DILATIONS
-        ])
-
-        # 5. cropping (320 on each side) — handled in forward
         self.crop = 320
+        self.bottleneck = _ConvBlock(768, 1536, kernel_size=1, dropout=0.05, bn_momentum=bn_momentum)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.stem_pool(self.stem_conv(x))
         for conv, pool in zip(self.tower_convs, self.tower_pools):
             x = pool(conv(x))
-        x = self.bottleneck(x)              # [B, 1536, L]
-        for block in self.dilated_tower:
-            x = block(x)
-        x = x[:, :, self.crop:-self.crop]   # crop 320 → [B, 1536, 896]
-        return x
+        x = x[:, :, self.crop:-self.crop]   # [B, 768, 896]
+        return self.bottleneck(x)            # [B, 1536, 896]
 
 
-# ── Prediction Head ───────────────────────────────────────────────────────────
-class _RTHead(nn.Module):
-    """Transformer head: n_layers× self-attention → classify at 128bp resolution.
+# ── Transformer tower ─────────────────────────────────────────────────────────
+class _TransformerTower(nn.Module):
+    """
+    Enformer Transformer tower: n_layers× self-attention over 896 tokens.
 
-    Input:  [B, in_features, T]
-    Output: [B, T, n_classes]
+    Input:  [B, 1536, 896]
+    Output: [B, 896, 1536]
     """
     def __init__(
         self,
-        in_features: int = 1536,
-        d_model: int = 512,
+        d_model: int = 1536,
         n_heads: int = 8,
-        ffn_dim: int = 1024,
-        n_layers: int = 4,
-        n_classes: int = 4,
-        dropout: float = 0.2,
+        ffn_dim: int = 3072,
+        n_layers: int = 11,
+        dropout: float = 0.4,
     ):
         super().__init__()
-        self.proj = nn.Linear(in_features, d_model) if in_features != d_model else nn.Identity()
         self.pos_bias = _RelativePosBias(n_heads=n_heads, max_len=896)
         self.layers = nn.ModuleList([
             _TransformerBlock(d_model, n_heads, ffn_dim, dropout)
             for _ in range(n_layers)
         ])
         self.norm = nn.LayerNorm(d_model)
-        self.out = nn.Linear(d_model, n_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, C, T]
-        x = x.permute(0, 2, 1)             # [B, T, C]
-        x = self.proj(x)                   # [B, T, d_model]
+        x = x.permute(0, 2, 1)             # [B, 896, 1536]
         T = x.shape[1]
-        attn_bias = self.pos_bias(T)        # [n_heads, T, T]
+        attn_bias = self.pos_bias(T)
         for layer in self.layers:
             x = layer(x, attn_bias)
-        x = self.norm(x)
-        return self.out(x)                  # [B, T, n_classes]
+        return self.norm(x)                 # [B, 896, 1536]
 
 
-# ── Basenji2Model ─────────────────────────────────────────────────────────────
+# ── EnformerModel ─────────────────────────────────────────────────────────────
 class Basenji2Model(nn.Module):
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _EnformerTrunk(bn_momentum=bn_momentum)
-        self.head = _RTHead(
-            in_features=1536, d_model=512, n_heads=8,
-            ffn_dim=1024, n_layers=4, n_classes=4, dropout=0.2,
+        self.transformer = _TransformerTower(
+            d_model=1536, n_heads=8, ffn_dim=3072, n_layers=11, dropout=0.4,
         )
+        self.head = nn.Linear(1536, 4)
 
     def forward(self, one_hot: torch.Tensor):
-        x = self.trunk(one_hot)             # [B, 1536, T]
-        return {"rt_logits": self.head(x)}  # [B, T, 4]
+        x = self.trunk(one_hot)             # [B, 1536, 896]
+        x = self.transformer(x)             # [B, 896, 1536]
+        return {"rt_logits": self.head(x)}  # [B, 896, 4]
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────

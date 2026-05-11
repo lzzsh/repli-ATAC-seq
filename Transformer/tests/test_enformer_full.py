@@ -32,7 +32,7 @@ def test_enformer_trunk_output_shape():
 
 def test_enformer_trunk_no_dilated():
     trunk = _EnformerTrunk()
-    assert not hasattr(trunk, 'dilated')
+    assert not hasattr(trunk, 'dilated_tower')
 
 from src.models.model import Basenji2Model, RTClassLoss
 

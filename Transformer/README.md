@@ -1,8 +1,6 @@
-# Basenji2 Repli-seq
+# Enformer-style Repli-seq RT Classifier
 
-基于 DNA 序列的 Basenji2 卷积模型，预测 Repli-seq ES/MS/LS/G1 信号（log1p TPM），并由预测值推导 WRT（Weighted Replication Timing）。架构对齐 Basenji2：one-hot 输入 → conv stem → conv tower → dilated residual tower → 中心 8 bin 逐位置线性预测头。
-
-每个训练样本以一个 GFF3 标注 bin 为中心截取 32 kb 窗口，模型输出中心 8 个 128 bp bin（共 1024 bp）的预测值，loss 在这 8 个 bin 上计算。
+基于 DNA 序列的 Enformer 风格模型，对水稻基因组每个 128 bp bin 预测复制时序类别（ES / MS / LS / NR）。架构对齐 Enformer：one-hot 输入 → conv stem → conv tower → bottleneck → Transformer tower → 逐 bin 分类头。
 
 ---
 
@@ -91,23 +89,23 @@ species:
 
 ```yaml
 data:
-  input_window_length: 32768   # 32 kb 输入窗口，对齐 Basenji2
+  input_window_length: 196608  # 196 kb 输入窗口，对齐 Enformer
 
 augmentation:
   rc_prob: 0.5                 # reverse complement 概率
-  shift_max: 3                 # 训练时随机平移最大 bins 数
+  shift_max: 1024              # 训练时随机平移最大 bp 数
 
 model:
   bn_momentum: 0.1             # TF bn_momentum=0.9 → PyTorch 1-0.9=0.1
 
 loss:
-  lambda_phase: 1.0            # MSE loss 权重
+  class_weights: [1.43, 1.43, 1.43, 1.0]  # ES, MS, LS, NR
 
 training:
-  learning_rate: 0.15          # SGD lr，对齐 Basenji2
-  momentum: 0.99
-  batch_size: 8
-  early_stopping_patience: 16  # val_loss 连续 16 个 epoch 不下降则停止
+  learning_rate: 0.0001        # Adam lr
+  warmup_steps: 2000           # 线性 warmup 步数
+  batch_size: 4                # 等效 batch = 4 × 8 = 32（梯度累积）
+  gradient_clip_norm: 0.2
   mixed_precision: true
 ```
 
@@ -218,82 +216,50 @@ logs/                   # TensorBoard 日志（不入 git）
 ### 7.1 整体结构
 
 ```
-DNA sequence [32 kb]，以 GFF3 标注 bin 为中心截取
+DNA sequence [196 kb]
+[B, 4, 196608]
       │
- one_hot_encode
- [B, 4, 32768]  (A/C/G/T，N→全零)
+ Conv stem: Conv1d(4→288, k=15) + AttnPool/2
+[B, 288, 98304]
       │
- Conv stem
- Conv1d(4→288, k=15, pool=2)          → [B, 288, 16384]
+ Conv tower（6 层，每层 AttnPool/2）
+ filters: 288→339→399→470→554→652→768  (×1.1776 递增, k=5)
+[B, 768, 1536]  @ 128 bp/token
       │
- Conv tower（6 层，每层 pool=2）
- filters: 288→339→399→470→554→652→768  (×1.1776 递增)
- 每层: BN → GELU → Conv1d(k=5, pool=2)
-                                       → [B, 768, 256]  @ 128bp/bin
+ Crop 320 each side
+[B, 768, 896]
       │
- Dilated residual tower（11 层）
- bottleneck 768→384→768，dilation rate_mult=1.5
-                                       → [B, 768, 256]
+ Bottleneck: Conv1d(768→1536, k=1, dropout=0.05)
+[B, 1536, 896]
       │
- Cropping1D（两端各裁 16 bins）        → [B, 768, 224]  @ 128bp/bin
+ Transformer tower（11 层，d_model=1536, n_heads=8, ffn=3072, dropout=0.4）
+ + 相对位置偏置（Enformer-style learnable bias）
+[B, 896, 1536]
       │
- Bottleneck conv: BN→GELU→Conv1d(768→1536, k=1, dropout=0.05)
-                                       → [B, 1536, 224]
-      │
- 取中心 8 个 bin（bin 108:116）        → [B, 1536, 8]
- 对应基因组位置: win_center ± 512bp，共 1024bp
-      │
- Linear(1536→4) 逐 bin 独立应用
-      │
- phase_pred [B, 8, 4]   (ES/MS/LS/G1 log1p TPM)
-      │
- loss = MSE(phase_pred, phase_labels[B, 8, 4])
+ LayerNorm + Linear(1536→4)
+[B, 896, 4]  → ES / MS / LS / NR per 128 bp bin
 ```
 
 ### 7.2 采样策略
 
-每个训练样本以一个 GFF3 标注 bin 为中心截取 32 kb 窗口：
+滑动窗口，stride = 输出区域大小（零重叠，对齐 Enformer）：
 
 ```
-标注 bin（ES/MS/LS）:  ████  ← 窗口中心 = 模型感受野中心
-窗口:  |←────────16384bp────────→|████|←────────16384bp────────→|
-标签:  中心 8 个 128bp bin 的 [ES, MS, LS, G1] log1p
+stride = 896 × 128 = 114688 bp
+每个 bin 只出现在一个训练样本中
 ```
 
-- 样本数 = GFF3 标注 bin 数（边界 bin 已过滤）
-- 标注 bin 严格落在中心 8 个输出 bin 内，无坐标偏移
+标签坐标对齐：第一个输出 bin 对应 `win_start + 320 × 128 = win_start + 40960 bp`。
 
-### 7.3 Dilated Residual Block
-
-```
-x [B, 768, L]
-│
-├─ GELU → Conv(k=3, dilation=d) → BN   ← 扩大感受野
-│         │
-│  GELU → Conv(k=1, dropout=0.3) → BN  ← gamma 零初始化（InitZero）
-│
-x = x + residual
-```
-
-11 层 dilation 序列（rate_mult=1.5，取整）：1, 2, 2, 3, 5, 8, 11, 17, 25, 38, 57，最大感受野约 ±22 kb。
-
-### 7.4 PhaseLoss
-
-```
-loss = MSE(phase_pred, phase_labels)
-```
-
-`phase_labels` shape `[B, 8, 4]`，为 log1p(TPM) 归一化后的 ES/MS/LS/G1 值，8 个 bin 等权。
-
-### 7.5 训练策略（对齐 Basenji2）
+### 7.3 训练策略（对齐 Enformer）
 
 | 参数 | 值 |
 |------|----|
-| Optimizer | SGD + momentum |
-| lr | 0.15 |
-| momentum | 0.99 |
-| Scheduler | ReduceLROnPlateau（patience=16，factor=0.2） |
-| Clip norm | 2.0 |
-| Batch size | 8 |
-| Early stopping patience | 16 |
-| 数据增强 | reverse complement（p=0.5）+ random shift（±3 bins） |
+| Optimizer | Adam |
+| lr | 1e-4 |
+| betas | (0.9, 0.999) |
+| Scheduler | warmup (2000 steps) + cosine decay |
+| Clip norm | 0.2 |
+| 有效 batch size | 32（4 × 梯度累积 8） |
+| 数据增强 | reverse complement (p=0.5) + random shift (±1024 bp) |
+| Loss | cross-entropy + class weights [1.43, 1.43, 1.43, 1.0] |

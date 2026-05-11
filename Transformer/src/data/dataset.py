@@ -42,7 +42,7 @@ class RepliSeqDataset(Dataset):
     _BIN_SIZE    = 128      # bp per trunk output bin
     _OUT_BIN     = 128      # bp per model output bin (no pooling)
     _OUT_BINS    = 896      # 196608/128 - 640 = 896 (crop 320 each side)
-    _CROP_BINS   = 16       # trunk crops 16 bins each side at 128bp (for label offset)
+    _CROP_BINS   = 320      # trunk crops 320 bins each side at 128bp (= 40960 bp)
     _STRIDE      = 114688   # bp between window starts (= output region, zero overlap, matches Enformer)
 
     def __init__(
