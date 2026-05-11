@@ -143,14 +143,16 @@ class _EnformerTrunk(nn.Module):
     Enformer trunk at 196608bp input:
       1. conv_block + AttnPool2: 4→288, k=15
       2. conv_tower + AttnPool2: 6 layers, filters 339→768 (×1.1776), k=5
-      3. Cropping1D: crop 320 on each side (at 128bp resolution)
-      4. conv_block: 768→1536, k=1, dropout=0.05
+      3. conv_block: 768→1536, k=1, dropout=0.05
+      4. dilated residual tower: 11 layers, k=3, dilation=[1,2,4,8,16,32,64,128,256,512,1]
+      5. Cropping1D: crop 320 on each side (at 128bp resolution)
 
     Input:  [B, 4, 196608]
     Output: [B, 1536, 896]  (896 bins × 128bp, after crop-320 each side)
     """
 
     _TOWER_FILTERS = [int(np.round(339 * (1.1776 ** i))) for i in range(6)]
+    _DILATIONS     = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1]
 
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
@@ -169,19 +171,28 @@ class _EnformerTrunk(nn.Module):
         self.tower_convs = nn.ModuleList(tower_convs)
         self.tower_pools = nn.ModuleList(tower_pools)
 
-        # 3. cropping (320 on each side) — handled in forward
-        self.crop = 320
-
-        # 4. bottleneck conv (768 → 1536)
+        # 3. bottleneck conv (768 → 1536)
         self.bottleneck = _ConvBlock(768, 1536, kernel_size=1, dropout=0.05, bn_momentum=bn_momentum)
 
+        # 4. dilated residual tower: 11 layers matching Enformer
+        self.dilated_tower = nn.ModuleList([
+            _DilatedResidual(in_ch=1536, filters=1536, kernel_size=3,
+                             dilation=d, dropout=0.3, bn_momentum=bn_momentum)
+            for d in self._DILATIONS
+        ])
+
+        # 5. cropping (320 on each side) — handled in forward
+        self.crop = 320
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, 4, L]
         x = self.stem_pool(self.stem_conv(x))
         for conv, pool in zip(self.tower_convs, self.tower_pools):
             x = pool(conv(x))
-        x = x[:, :, self.crop:-self.crop]  # crop 320 → [B, 768, 896]
-        return self.bottleneck(x)          # → [B, 1536, 896]
+        x = self.bottleneck(x)              # [B, 1536, L]
+        for block in self.dilated_tower:
+            x = block(x)
+        x = x[:, :, self.crop:-self.crop]   # crop 320 → [B, 1536, 896]
+        return x
 
 
 # ── Prediction Head ───────────────────────────────────────────────────────────
