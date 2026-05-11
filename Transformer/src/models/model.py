@@ -2,7 +2,6 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 
 
 # ── Positional feature functions (from Enformer) ──────────────────────────────
@@ -56,45 +55,31 @@ def _relative_shift(x: torch.Tensor) -> torch.Tensor:
     return x[..., :((t2 + 1) // 2)]
 
 
+def _enformer_gelu(x: torch.Tensor) -> torch.Tensor:
+    """Enformer GELU: sigmoid(1.702*x)*x (swish approximation used throughout)."""
+    return torch.sigmoid(1.702 * x) * x
+
+
 # ── Conv block ────────────────────────────────────────────────────────────────
-# Two modes controlled by `pre_norm`:
-#   pre_norm=True  (stem/tower/bottleneck): BN → GELU → Conv  (pre-activation)
-#   pre_norm=False (residual internals):    GELU → Conv → BN   (matches Basenji2 paper)
 class _ConvBlock(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int, kernel_size: int,
-                 dilation: int = 1, pool_size: int = 1,
-                 dropout: float = 0.0, bn_momentum: float = 0.1,
-                 norm_gamma_zero: bool = False, pre_norm: bool = True):
+    """Enformer ConvBlock: BN → GELU → Conv1d."""
+    def __init__(self, in_ch: int, out_ch: int, kernel_size: int = 1,
+                 bn_momentum: float = 0.1):
         super().__init__()
-        self.pre_norm = pre_norm
-        self.bn = nn.BatchNorm1d(in_ch if pre_norm else out_ch, momentum=bn_momentum)
-        if norm_gamma_zero:
-            nn.init.zeros_(self.bn.weight)
-        self.act = nn.GELU()
-        self.conv = nn.Conv1d(
-            in_ch, out_ch, kernel_size,
-            padding=dilation * (kernel_size // 2),
-            dilation=dilation, bias=False,
-        )
-        self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
-        self.pool = nn.MaxPool1d(pool_size) if pool_size > 1 else nn.Identity()
+        self.bn   = nn.BatchNorm1d(in_ch, momentum=bn_momentum)
+        self.conv = nn.Conv1d(in_ch, out_ch, kernel_size, padding=kernel_size // 2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.pre_norm:
-            x = self.conv(self.act(self.bn(x)))
-        else:
-            x = self.bn(self.conv(self.act(x)))
-        x = self.drop(x)
-        x = self.pool(x)
-        return x
+        return self.conv(_enformer_gelu(self.bn(x)))
 
 
 
 # ── Attention pooling ─────────────────────────────────────────────────────────
 class _AttnPool(nn.Module):
-    """Per-channel softmax attention pooling (matches Enformer SoftmaxPooling1D).
+    """Per-channel softmax attention pooling (matches Enformer AttentionPool).
 
-    Each channel learns its own pooling weights over the pool window.
+    Uses Conv2d(dim, dim, 1, bias=False) with dirac_ init × 2.
+    Handles odd-length inputs by padding then masking.
 
     Input:  [B, C, L]
     Output: [B, C, L // pool_size]
@@ -102,21 +87,31 @@ class _AttnPool(nn.Module):
     def __init__(self, in_channels: int, pool_size: int = 2):
         super().__init__()
         self.pool_size = pool_size
-        self.weight = nn.Linear(in_channels, in_channels, bias=False)
-        # identity init with scale=2.0, matching Enformer w_init_scale
-        nn.init.eye_(self.weight.weight)
-        self.weight.weight.data *= 2.0
+        self.to_attn_logits = nn.Conv2d(in_channels, in_channels, 1, bias=False)
+        nn.init.dirac_(self.to_attn_logits.weight)
+        with torch.no_grad():
+            self.to_attn_logits.weight.mul_(2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, L = x.shape
-        L_trunc = (L // self.pool_size) * self.pool_size
-        x = x[:, :, :L_trunc]
-        x = x.reshape(B, C, L_trunc // self.pool_size, self.pool_size)
-        x_t = x.permute(0, 2, 3, 1)                        # [B, L//p, p, C]
-        w = self.weight(x_t)                                # [B, L//p, p, C]
-        w = torch.softmax(w, dim=2)
-        out = (x_t * w).sum(dim=2)                          # [B, L//p, C]
-        return out.permute(0, 2, 1)                         # [B, C, L//p]
+        remainder = L % self.pool_size
+        needs_padding = remainder > 0
+        if needs_padding:
+            x = F.pad(x, (0, self.pool_size - remainder), value=0)
+            mask = torch.zeros((B, 1, L), dtype=torch.bool, device=x.device)
+            mask = F.pad(mask, (0, self.pool_size - remainder), value=True)
+
+        # [B, C, L', p] where L' = L_padded // pool_size
+        x = x.reshape(B, C, -1, self.pool_size)
+        logits = self.to_attn_logits(x)
+
+        if needs_padding:
+            mask = mask.reshape(B, 1, -1, self.pool_size)
+            mask_val = -torch.finfo(logits.dtype).max
+            logits = logits.masked_fill(mask, mask_val)
+
+        attn = logits.softmax(dim=-1)
+        return (x * attn).sum(dim=-1)              # [B, C, L']
 
 
 # ── Enformer attention ────────────────────────────────────────────────────────
@@ -213,38 +208,35 @@ class _TransformerBlock(nn.Module):
 # ── Enformer trunk ────────────────────────────────────────────────────────────
 class _EnformerTrunk(nn.Module):
     """
-    Enformer conv trunk (matches DeepMind original order):
-      1. stem:       Conv(4→288, k=15) + Residual(pointwise) + AttnPool/2  → [B, 288, 98304]
-      2. conv tower: 6× [Conv(k=5) + Residual(pointwise) + AttnPool/2]     → [B, 768, 1536]
-      3. bottleneck: Conv(768→1536, k=1, drop=0.05)                        → [B, 1536, 1536]
-
-    Crop and final pointwise happen after the Transformer tower in Basenji2Model.
+    Enformer conv trunk (exact channel schedule from DeepMind):
+      stem:   Conv1d(4→768, k=15) + Residual(ConvBlock(768)) + AttnPool/2
+      tower:  6× [ConvBlock(dim_in→dim_out, k=5) + Residual(ConvBlock(dim_out)) + AttnPool/2]
+              filters: 768→768→896→1024→1152→1280→1536
 
     Input:  [B, 4, 196608]
     Output: [B, 1536, 1536]
     """
 
-    _TOWER_FILTERS = [int(np.round(339 * (1.1776 ** i))) for i in range(6)]
+    # exponential_linspace_int(768, 1536, num=6, divisible_by=128) prepended with 768
+    _FILTER_LIST = [768, 768, 896, 1024, 1152, 1280, 1536]
 
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
 
-        self.stem_conv = _ConvBlock(4, 288, kernel_size=15, bn_momentum=bn_momentum)
-        self.stem_res  = _ConvBlock(288, 288, kernel_size=1, bn_momentum=bn_momentum)
-        self.stem_pool = _AttnPool(288, pool_size=2)
+        # stem: plain Conv1d (no BN on raw input), then Residual(ConvBlock) + AttnPool
+        self.stem_conv = nn.Conv1d(4, 768, kernel_size=15, padding=7)
+        self.stem_res  = _ConvBlock(768, 768, kernel_size=1, bn_momentum=bn_momentum)
+        self.stem_pool = _AttnPool(768, pool_size=2)
 
+        # conv tower
         tower_convs, tower_res, tower_pools = [], [], []
-        in_ch = 288
-        for out_ch in self._TOWER_FILTERS:
-            tower_convs.append(_ConvBlock(in_ch, out_ch, kernel_size=5, bn_momentum=bn_momentum))
-            tower_res.append(_ConvBlock(out_ch, out_ch, kernel_size=1, bn_momentum=bn_momentum))
-            tower_pools.append(_AttnPool(out_ch, pool_size=2))
-            in_ch = out_ch
+        for dim_in, dim_out in zip(self._FILTER_LIST[:-1], self._FILTER_LIST[1:]):
+            tower_convs.append(_ConvBlock(dim_in, dim_out, kernel_size=5, bn_momentum=bn_momentum))
+            tower_res.append(_ConvBlock(dim_out, dim_out, kernel_size=1, bn_momentum=bn_momentum))
+            tower_pools.append(_AttnPool(dim_out, pool_size=2))
         self.tower_convs = nn.ModuleList(tower_convs)
         self.tower_res   = nn.ModuleList(tower_res)
         self.tower_pools = nn.ModuleList(tower_pools)
-
-        self.bottleneck = _ConvBlock(768, 1536, kernel_size=1, dropout=0.05, bn_momentum=bn_momentum)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         y = self.stem_conv(x)
@@ -252,7 +244,7 @@ class _EnformerTrunk(nn.Module):
         for conv, res, pool in zip(self.tower_convs, self.tower_res, self.tower_pools):
             y = conv(x)
             x = pool(y + res(y))
-        return self.bottleneck(x)               # [B, 1536, 1536]
+        return x                                    # [B, 1536, 1536]
 
 
 # ── Transformer tower ─────────────────────────────────────────────────────────
@@ -297,10 +289,8 @@ class Basenji2Model(nn.Module):
         self.transformer = _TransformerTower()
         self.final_pointwise = nn.Sequential(
             nn.BatchNorm1d(1536, momentum=bn_momentum),
-            nn.GELU(),
             nn.Conv1d(1536, 3072, kernel_size=1),
             nn.Dropout(0.05),
-            nn.GELU(),
         )
         self.head = nn.Linear(3072, 4)
 
@@ -309,7 +299,7 @@ class Basenji2Model(nn.Module):
         x = self.transformer(x)                             # [B, 1536, 1536] (T, C)
         x = x[:, self._CROP:-self._CROP, :]                 # [B, 896, 1536]
         x = x.permute(0, 2, 1)                              # [B, 1536, 896] for BN/Conv1d
-        x = self.final_pointwise(x)                         # [B, 3072, 896]
+        x = _enformer_gelu(self.final_pointwise(x))         # [B, 3072, 896]
         x = x.permute(0, 2, 1)                              # [B, 896, 3072]
         return {"rt_logits": self.head(x)}                  # [B, 896, 4]
 
