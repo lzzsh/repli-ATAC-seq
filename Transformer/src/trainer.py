@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 import time
@@ -96,21 +97,13 @@ def train(config_path: str, resume: str | None = None):
     if ddp:
         model = DDP(model, device_ids=[local_rank])
 
-    criterion = RTClassLoss()
+    class_weights = cfg.get("loss", {}).get("class_weights", None)
+    criterion = RTClassLoss(class_weights=class_weights).to(device)
 
-    optimizer = torch.optim.SGD(
+    optimizer = torch.optim.Adam(
         model.parameters(),
         lr=cfg["training"]["learning_rate"],
-        momentum=cfg["training"].get("momentum", 0.99),
-        weight_decay=cfg["training"].get("weight_decay", 1e-4),
-    )
-    # ReduceLROnPlateau: halve lr when val loss stops improving
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode="min",
-        factor=cfg["training"]["lr_decay_factor"],
-        patience=cfg["training"]["lr_patience"],
-        min_lr=cfg["training"]["min_lr"],
+        betas=(0.9, 0.999),
     )
     scaler = GradScaler(enabled=cfg["training"]["mixed_precision"])
 
@@ -123,8 +116,6 @@ def train(config_path: str, resume: str | None = None):
         raw.load_state_dict(ckpt["model"])
         if "optimizer" in ckpt:
             optimizer.load_state_dict(ckpt["optimizer"])
-        if "scheduler" in ckpt:
-            scheduler.load_state_dict(ckpt["scheduler"])
         if "scaler" in ckpt:
             scaler.load_state_dict(ckpt["scaler"])
         start_epoch   = ckpt.get("epoch", 0)
@@ -143,6 +134,21 @@ def train(config_path: str, resume: str | None = None):
 
     accum = cfg["training"]["gradient_accumulation_steps"]
     early_stop_patience = cfg["training"]["early_stopping_patience"]
+
+    warmup_steps = cfg["training"].get("warmup_steps", 1000)
+    total_steps = cfg["training"]["max_epochs"] * len(train_loader) // accum
+
+    def _lr_lambda(step: int) -> float:
+        if step < warmup_steps:
+            return step / max(1, warmup_steps)
+        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+        return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _lr_lambda)
+
+    if resume:
+        if "scheduler" in ckpt:
+            scheduler.load_state_dict(ckpt["scheduler"])
 
     for epoch in range(start_epoch, cfg["training"]["max_epochs"]):
         if ddp:
@@ -167,6 +173,7 @@ def train(config_path: str, resume: str | None = None):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["training"]["gradient_clip_norm"])
                 scaler.step(optimizer)
                 scaler.update()
+                scheduler.step()
                 optimizer.zero_grad()
 
         should_stop = torch.tensor(0, device=device)
@@ -178,7 +185,6 @@ def train(config_path: str, resume: str | None = None):
 
             metrics = _validate(model, val_loader, criterion, device)
             val_loss = metrics["val_loss_total"]
-            scheduler.step(val_loss)
 
             writer.add_scalar("val/loss_total", val_loss, epoch + 1)
             writer.add_scalar("val/loss_rt", metrics["val_loss_rt"], epoch + 1)

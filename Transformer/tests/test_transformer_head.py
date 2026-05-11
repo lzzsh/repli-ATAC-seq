@@ -45,15 +45,15 @@ from src.models.model import Basenji2Model, RTClassLoss
 
 def test_model_output_shape_transformer_head():
     model = Basenji2Model()
-    x = torch.zeros(2, 4, 131072)
+    x = torch.zeros(2, 4, 196608)
     out = model(x)
-    assert out["rt_logits"].shape == (2, 124, 4)
+    assert out["rt_logits"].shape == (2, 896, 4)
 
 def test_model_loss_finite():
     model = Basenji2Model()
     criterion = RTClassLoss()
-    x = torch.zeros(2, 4, 131072)
-    labels = torch.randint(0, 4, (2, 124))
+    x = torch.zeros(2, 4, 196608)
+    labels = torch.randint(0, 4, (2, 896))
     out = model(x)
     loss = criterion(out, {"rt_labels": labels})
     assert torch.isfinite(loss["total"])
