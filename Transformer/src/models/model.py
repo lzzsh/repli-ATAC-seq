@@ -1,7 +1,59 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+
+
+# ── Positional feature functions (from Enformer) ──────────────────────────────
+
+def _pos_features_exponential(positions, features, seq_len):
+    max_range = math.log(seq_len) / math.log(2.)
+    half_life = 2 ** torch.linspace(math.log(3.) / math.log(2.), max_range, features,
+                                    device=positions.device)
+    return torch.exp(-math.log(2.) / half_life * positions.abs().unsqueeze(-1))
+
+def _pos_features_central_mask(positions, features, seq_len):
+    center_widths = (2 ** torch.arange(1, features + 1, device=positions.device).float()) - 1
+    return (center_widths.unsqueeze(0) > positions.abs().unsqueeze(-1)).float()
+
+def _gamma_pdf(x, concentration, rate):
+    log_unnorm = torch.xlogy(concentration - 1., x) - rate * x
+    log_norm = torch.lgamma(concentration) - concentration * torch.log(rate)
+    return torch.exp(log_unnorm - log_norm)
+
+def _pos_features_gamma(positions, features, seq_len, eps=1e-8):
+    stddev = seq_len / (2 * features)
+    start_mean = seq_len / features
+    mean = torch.linspace(start_mean, seq_len, features, device=positions.device)
+    concentration = (mean / stddev) ** 2
+    rate = mean / stddev ** 2
+    probs = _gamma_pdf(positions.abs().unsqueeze(-1), concentration, rate) + eps
+    return probs / probs.amax(dim=0, keepdim=True)
+
+def _get_positional_embed(seq_len: int, feature_size: int, device) -> torch.Tensor:
+    """[2T-1, feature_size] positional basis features (Enformer-style)."""
+    assert feature_size % 6 == 0, f'feature_size must be divisible by 6, got {feature_size}'
+    n = feature_size // 6
+    distances = torch.arange(-(seq_len - 1), seq_len, device=device, dtype=torch.float32)
+    parts = [
+        _pos_features_exponential(distances, n, seq_len),
+        _pos_features_central_mask(distances, n, seq_len),
+        _pos_features_gamma(distances, n, seq_len),
+    ]
+    embeddings = torch.cat(parts, dim=-1)                          # [2T-1, feature_size//2]
+    sign = torch.sign(distances).unsqueeze(-1)                     # [2T-1, 1]
+    return torch.cat([embeddings, sign * embeddings], dim=-1)      # [2T-1, feature_size]
+
+def _relative_shift(x: torch.Tensor) -> torch.Tensor:
+    """TransformerXL relative shift. x: [B, H, T, 2T-1] → [B, H, T, T]"""
+    to_pad = torch.zeros_like(x[..., :1])
+    x = torch.cat((to_pad, x), dim=-1)
+    B, H, t1, t2 = x.shape
+    x = x.reshape(B, H, t2, t1)
+    x = x[:, :, 1:, :]
+    x = x.reshape(B, H, t1, t2 - 1)
+    return x[..., :((t2 + 1) // 2)]
 
 
 # ── Conv block ────────────────────────────────────────────────────────────────
@@ -67,57 +119,95 @@ class _AttnPool(nn.Module):
         return out.permute(0, 2, 1)                         # [B, C, L//p]
 
 
-# ── Relative positional bias ──────────────────────────────────────────────────
-class _RelativePosBias(nn.Module):
-    """Learnable relative positional bias added to attention logits (Enformer-style).
-
-    bias table has shape [n_heads, 2*max_len - 1].
-    For positions i, j: bias[h, i, j] = table[h, j - i + max_len - 1]
+# ── Enformer attention ────────────────────────────────────────────────────────
+class _EnformerAttention(nn.Module):
     """
-    def __init__(self, n_heads: int, max_len: int):
+    Enformer multi-head attention (matches modeling_enformer.py Attention class):
+    - dim_key=64 per head (Q, K); dim_value=d_model//heads=192 per head (V)
+    - TransformerXL relative position: basis features → to_rel_k
+    - rel_content_bias (r_w_bias) and rel_pos_bias (r_r_bias)
+    - relative_shift for causal-free relative logits
+    - attn_dropout=0.05, pos_dropout=0.01
+    - Q/K/V: bias=False; out_proj: zero-initialized
+    """
+    def __init__(self, d_model: int = 1536, n_heads: int = 8, dim_key: int = 64,
+                 attn_dropout: float = 0.05, pos_dropout: float = 0.01):
         super().__init__()
-        self.max_len = max_len
-        self.bias = nn.Parameter(torch.zeros(n_heads, 2 * max_len - 1))
+        self.scale = dim_key ** -0.5
+        self.n_heads = n_heads
+        self.dim_key = dim_key
+        dim_value = d_model // n_heads                  # 192
+        num_rel_pos_features = d_model // n_heads       # 192
 
-    def forward(self, seq_len: int) -> torch.Tensor:
-        idx = torch.arange(seq_len, device=self.bias.device)
-        offsets = idx.unsqueeze(1) - idx.unsqueeze(0)          # [T, T]
-        table_idx = offsets + self.max_len - 1                  # [T, T], 0-based
-        return self.bias[:, table_idx]                          # [n_heads, T, T]
+        self.to_q = nn.Linear(d_model, dim_key * n_heads, bias=False)
+        self.to_k = nn.Linear(d_model, dim_key * n_heads, bias=False)
+        self.to_v = nn.Linear(d_model, dim_value * n_heads, bias=False)
 
+        self.to_out = nn.Linear(dim_value * n_heads, d_model)
+        nn.init.zeros_(self.to_out.weight)
+        nn.init.zeros_(self.to_out.bias)
+
+        self.to_rel_k = nn.Linear(num_rel_pos_features, dim_key * n_heads, bias=False)
+        self.rel_content_bias = nn.Parameter(torch.randn(1, n_heads, 1, dim_key))
+        self.rel_pos_bias     = nn.Parameter(torch.randn(1, n_heads, 1, dim_key))
+
+        self.pos_dropout  = nn.Dropout(pos_dropout)
+        self.attn_dropout = nn.Dropout(attn_dropout)
+        self.num_rel_pos_features = num_rel_pos_features
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, T, _ = x.shape
+        H, D = self.n_heads, self.dim_key
+        Dv = x.shape[-1] // H
+
+        q = self.to_q(x).reshape(B, T, H, D).permute(0, 2, 1, 3)   # [B, H, T, D]
+        k = self.to_k(x).reshape(B, T, H, D).permute(0, 2, 1, 3)
+        v = self.to_v(x).reshape(B, T, H, Dv).permute(0, 2, 1, 3)  # [B, H, T, Dv]
+
+        q = q * self.scale
+
+        # content logits: (q + r_w_bias) @ k^T
+        content_logits = torch.einsum('bhid,bhjd->bhij', q + self.rel_content_bias, k)
+
+        # relative position logits
+        positions = _get_positional_embed(T, self.num_rel_pos_features, x.device)
+        positions = self.pos_dropout(positions)
+        rel_k = self.to_rel_k(positions)                             # [2T-1, H*D]
+        rel_k = rel_k.reshape(-1, H, D).permute(1, 0, 2)            # [H, 2T-1, D]
+        rel_logits = torch.einsum('bhid,hjd->bhij', q + self.rel_pos_bias, rel_k)
+        rel_logits = _relative_shift(rel_logits)                     # [B, H, T, T]
+
+        attn = (content_logits + rel_logits).softmax(dim=-1)
+        attn = self.attn_dropout(attn)
+
+        out = torch.einsum('bhij,bhjd->bhid', attn, v)
+        out = out.permute(0, 2, 1, 3).reshape(B, T, -1)             # [B, T, H*Dv]
+        return self.to_out(out)
 
 
 # ── Transformer block ─────────────────────────────────────────────────────────
 class _TransformerBlock(nn.Module):
-    """Single Transformer layer: multi-head self-attention + FFN, with relative pos bias."""
+    """Enformer Transformer layer: pre-norm attention + pre-norm FFN with ReLU."""
 
-    def __init__(self, d_model: int, n_heads: int, ffn_dim: int, dropout: float = 0.1):
+    def __init__(self, d_model: int = 1536, n_heads: int = 8, dim_key: int = 64,
+                 dropout: float = 0.4, attn_dropout: float = 0.05, pos_dropout: float = 0.01):
         super().__init__()
-        self.attn = nn.MultiheadAttention(
-            d_model, n_heads, dropout=dropout, batch_first=True
-        )
-        self.ff1 = nn.Linear(d_model, ffn_dim)
-        self.ff2 = nn.Linear(ffn_dim, d_model)
         self.norm1 = nn.LayerNorm(d_model)
+        self.attn  = _EnformerAttention(d_model, n_heads, dim_key, attn_dropout, pos_dropout)
+        self.drop1 = nn.Dropout(dropout)
+
         self.norm2 = nn.LayerNorm(d_model)
-        self.drop = nn.Dropout(dropout)
-        self.act = nn.GELU()
+        self.ff1   = nn.Linear(d_model, d_model * 2)
+        self.ff2   = nn.Linear(d_model * 2, d_model)
+        self.drop2 = nn.Dropout(dropout)
+        self.drop3 = nn.Dropout(dropout)
+        self.act   = nn.ReLU()          # Enformer FFN uses ReLU
 
-    def forward(self, x: torch.Tensor, attn_bias: torch.Tensor) -> torch.Tensor:
-        # attn_bias: [n_heads, T, T] → expand to [B*n_heads, T, T]
-        B, T, _ = x.shape
-        n_heads = attn_bias.shape[0]
-        mask = attn_bias.unsqueeze(0).expand(B, -1, -1, -1).reshape(B * n_heads, T, T)
-
-        # pre-norm attention
-        h = self.norm1(x)
-        h, _ = self.attn(h, h, h, attn_mask=mask, need_weights=False)
-        x = x + self.drop(h)
-
-        # pre-norm FFN
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.drop1(self.attn(self.norm1(x)))
         h = self.norm2(x)
-        h = self.ff2(self.drop(self.act(self.ff1(h))))
-        return x + self.drop(h)
+        h = self.ff2(self.drop2(self.act(self.ff1(h))))
+        return x + self.drop3(h)
 
 
 # ── Enformer trunk ────────────────────────────────────────────────────────────
@@ -168,67 +258,59 @@ class _EnformerTrunk(nn.Module):
 # ── Transformer tower ─────────────────────────────────────────────────────────
 class _TransformerTower(nn.Module):
     """
-    Enformer Transformer tower: n_layers× self-attention over full 1536 tokens.
+    Enformer Transformer tower: n_layers× attention over full 1536 tokens.
 
-    Input:  [B, 1536, 1536]   (channels, tokens)
-    Output: [B, 1536, 1536]   (tokens, channels) — note: returns [B, T, C]
+    Input:  [B, 1536, 1536]   (C, T)
+    Output: [B, 1536, 1536]   (T, C)
     """
-    def __init__(
-        self,
-        d_model: int = 1536,
-        n_heads: int = 8,
-        ffn_dim: int = 3072,
-        n_layers: int = 11,
-        dropout: float = 0.4,
-    ):
+    def __init__(self, d_model: int = 1536, n_heads: int = 8, dim_key: int = 64,
+                 n_layers: int = 11, dropout: float = 0.4,
+                 attn_dropout: float = 0.05, pos_dropout: float = 0.01):
         super().__init__()
-        self.pos_bias = _RelativePosBias(n_heads=n_heads, max_len=1536)
         self.layers = nn.ModuleList([
-            _TransformerBlock(d_model, n_heads, ffn_dim, dropout)
+            _TransformerBlock(d_model, n_heads, dim_key, dropout, attn_dropout, pos_dropout)
             for _ in range(n_layers)
         ])
-        self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.permute(0, 2, 1)             # [B, 1536, 1536] → [B, T=1536, C=1536]
-        T = x.shape[1]
-        attn_bias = self.pos_bias(T)
+        x = x.permute(0, 2, 1)     # [B, C, T] → [B, T, C]
         for layer in self.layers:
-            x = layer(x, attn_bias)
-        return self.norm(x)                 # [B, 1536, 1536]
+            x = layer(x)
+        return x                    # [B, T, C]
 
 
 # ── EnformerModel ─────────────────────────────────────────────────────────────
 class Basenji2Model(nn.Module):
     """
-    Full Enformer-style model:
-      trunk (conv)  → [B, 1536, 1536]
-      transformer   → [B, 1536, 1536]  (over full 1536 tokens)
-      crop 320      → [B, 896, 1536]   (center 896 tokens)
-      final pointwise Conv(1536→1536, k=1, drop=0.05)
-      head Linear(1536→4)              → [B, 896, 4]
+    Full Enformer-aligned model:
+      trunk (conv)      → [B, 1536, 1536]
+      transformer       → [B, 1536, 1536]  (over full 1536 tokens)
+      crop 320          → [B, 896, 1536]
+      final_pointwise   BN→GELU→Conv1d(1536→3072)→Dropout(0.05)→GELU → [B, 896, 3072]
+      head Linear(3072→4)                                              → [B, 896, 4]
     """
     _CROP = 320
 
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _EnformerTrunk(bn_momentum=bn_momentum)
-        self.transformer = _TransformerTower(
-            d_model=1536, n_heads=8, ffn_dim=3072, n_layers=11, dropout=0.4,
-        )
+        self.transformer = _TransformerTower()
         self.final_pointwise = nn.Sequential(
-            nn.LayerNorm(1536),
-            nn.Linear(1536, 1536),
+            nn.BatchNorm1d(1536, momentum=bn_momentum),
+            nn.GELU(),
+            nn.Conv1d(1536, 3072, kernel_size=1),
             nn.Dropout(0.05),
             nn.GELU(),
         )
-        self.head = nn.Linear(1536, 4)
+        self.head = nn.Linear(3072, 4)
 
     def forward(self, one_hot: torch.Tensor):
         x = self.trunk(one_hot)                             # [B, 1536, 1536]
-        x = self.transformer(x)                             # [B, 1536, 1536]
+        x = self.transformer(x)                             # [B, 1536, 1536] (T, C)
         x = x[:, self._CROP:-self._CROP, :]                 # [B, 896, 1536]
-        x = self.final_pointwise(x)                         # [B, 896, 1536]
+        x = x.permute(0, 2, 1)                              # [B, 1536, 896] for BN/Conv1d
+        x = self.final_pointwise(x)                         # [B, 3072, 896]
+        x = x.permute(0, 2, 1)                              # [B, 896, 3072]
         return {"rt_logits": self.head(x)}                  # [B, 896, 4]
 
 
