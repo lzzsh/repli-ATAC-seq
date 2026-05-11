@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint_sequential
 
 
 # ── Positional feature functions (from Enformer) ──────────────────────────────
@@ -28,7 +29,7 @@ def _pos_features_gamma(positions, features, seq_len, eps=1e-8):
     concentration = (mean / stddev) ** 2
     rate = mean / stddev ** 2
     probs = _gamma_pdf(positions.abs().unsqueeze(-1), concentration, rate) + eps
-    return probs / probs.amax(dim=0, keepdim=True)
+    return probs / probs.amax(dim=-1, keepdim=True)
 
 def _get_positional_embed(seq_len: int, feature_size: int, device) -> torch.Tensor:
     """[2T-1, feature_size] positional basis features (Enformer-style)."""
@@ -266,8 +267,10 @@ class _TransformerTower(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.permute(0, 2, 1)     # [B, C, T] → [B, T, C]
-        for layer in self.layers:
-            x = layer(x)
+        # gradient checkpointing: recompute activations during backward
+        # trades compute for memory — required for T=1536 on 40GB GPUs
+        x = checkpoint_sequential(self.layers, len(self.layers), x,
+                                  use_reentrant=False)
         return x                    # [B, T, C]
 
 
@@ -287,11 +290,9 @@ class Basenji2Model(nn.Module):
         super().__init__()
         self.trunk = _EnformerTrunk(bn_momentum=bn_momentum)
         self.transformer = _TransformerTower()
-        self.final_pointwise = nn.Sequential(
-            nn.BatchNorm1d(1536, momentum=bn_momentum),
-            nn.Conv1d(1536, 3072, kernel_size=1),
-            nn.Dropout(0.05),
-        )
+        self.final_bn   = nn.BatchNorm1d(1536, momentum=bn_momentum)
+        self.final_conv = nn.Conv1d(1536, 3072, kernel_size=1)
+        self.final_drop = nn.Dropout(0.05)
         self.head = nn.Linear(3072, 4)
 
     def forward(self, one_hot: torch.Tensor):
@@ -299,7 +300,9 @@ class Basenji2Model(nn.Module):
         x = self.transformer(x)                             # [B, 1536, 1536] (T, C)
         x = x[:, self._CROP:-self._CROP, :]                 # [B, 896, 1536]
         x = x.permute(0, 2, 1)                              # [B, 1536, 896] for BN/Conv1d
-        x = _enformer_gelu(self.final_pointwise(x))         # [B, 3072, 896]
+        # final_pointwise: BN → GELU → Conv1d(1536→3072) → Dropout → GELU
+        x = _enformer_gelu(self.final_bn(x))
+        x = _enformer_gelu(self.final_drop(self.final_conv(x)))  # [B, 3072, 896]
         x = x.permute(0, 2, 1)                              # [B, 896, 3072]
         return {"rt_logits": self.head(x)}                  # [B, 896, 4]
 
