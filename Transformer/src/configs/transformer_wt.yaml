@@ -14,18 +14,15 @@ model:
 
 loss:
   lambda_phase: 1.0
+  class_weights: [1.43, 1.43, 1.43, 1.0]  # ES, MS, LS, NR 等权重（强制平等对待四类）
 
 training:
-  learning_rate: 0.001
-  momentum: 0.99
-  weight_decay: 1.0e-4
-  lr_decay_factor: 0.5
-  lr_patience: 8
-  min_lr: 1.0e-7
+  learning_rate: 0.0001
+  warmup_steps: 2000
   batch_size: 4
   gradient_accumulation_steps: 8
   max_epochs: 200
-  early_stopping_patience: 32
-  gradient_clip_norm: 2.0
+  early_stopping_patience: 10
+  gradient_clip_norm: 0.2
   mixed_precision: true
   seed: 42
