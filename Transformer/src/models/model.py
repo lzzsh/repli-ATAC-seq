@@ -40,10 +40,9 @@ class _ConvBlock(nn.Module):
 
 # ── Attention pooling ─────────────────────────────────────────────────────────
 class _AttnPool(nn.Module):
-    """Attention pooling: replaces MaxPool. Learns softmax weights per position.
+    """Per-channel softmax attention pooling (matches Enformer SoftmaxPooling1D).
 
-    For each pool window of size `pool_size`, computes a scalar logit per position
-    via a linear layer, applies softmax, then returns the weighted sum of features.
+    Each channel learns its own pooling weights over the pool window.
 
     Input:  [B, C, L]
     Output: [B, C, L // pool_size]
@@ -51,15 +50,18 @@ class _AttnPool(nn.Module):
     def __init__(self, in_channels: int, pool_size: int = 2):
         super().__init__()
         self.pool_size = pool_size
-        self.weight = nn.Linear(in_channels, 1)
+        self.weight = nn.Linear(in_channels, in_channels, bias=False)
+        # identity init with scale=2.0, matching Enformer w_init_scale
+        nn.init.eye_(self.weight.weight)
+        self.weight.weight.data *= 2.0
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, L = x.shape
         L_trunc = (L // self.pool_size) * self.pool_size
-        x = x[:, :, :L_trunc]                              # [B, C, L_trunc]
+        x = x[:, :, :L_trunc]
         x = x.reshape(B, C, L_trunc // self.pool_size, self.pool_size)
         x_t = x.permute(0, 2, 3, 1)                        # [B, L//p, p, C]
-        w = self.weight(x_t)                                # [B, L//p, p, 1]
+        w = self.weight(x_t)                                # [B, L//p, p, C]
         w = torch.softmax(w, dim=2)
         out = (x_t * w).sum(dim=2)                          # [B, L//p, C]
         return out.permute(0, 2, 1)                         # [B, C, L//p]
@@ -121,14 +123,15 @@ class _TransformerBlock(nn.Module):
 # ── Enformer trunk ────────────────────────────────────────────────────────────
 class _EnformerTrunk(nn.Module):
     """
-    Enformer conv trunk:
-      1. stem:       Conv(4→288, k=15) + AttnPool/2  → [B, 288, 98304]
-      2. conv tower: 6× Conv(k=5) + AttnPool/2       → [B, 768, 1536]
-      3. crop 320 each side                           → [B, 768, 896]
-      4. bottleneck: Conv(768→1536, k=1, drop=0.05)  → [B, 1536, 896]
+    Enformer conv trunk (matches DeepMind original order):
+      1. stem:       Conv(4→288, k=15) + Residual(pointwise) + AttnPool/2  → [B, 288, 98304]
+      2. conv tower: 6× [Conv(k=5) + Residual(pointwise) + AttnPool/2]     → [B, 768, 1536]
+      3. bottleneck: Conv(768→1536, k=1, drop=0.05)                        → [B, 1536, 1536]
+
+    Crop and final pointwise happen after the Transformer tower in Basenji2Model.
 
     Input:  [B, 4, 196608]
-    Output: [B, 1536, 896]
+    Output: [B, 1536, 1536]
     """
 
     _TOWER_FILTERS = [int(np.round(339 * (1.1776 ** i))) for i in range(6)]
@@ -137,35 +140,38 @@ class _EnformerTrunk(nn.Module):
         super().__init__()
 
         self.stem_conv = _ConvBlock(4, 288, kernel_size=15, bn_momentum=bn_momentum)
+        self.stem_res  = _ConvBlock(288, 288, kernel_size=1, bn_momentum=bn_momentum)
         self.stem_pool = _AttnPool(288, pool_size=2)
 
-        tower_convs, tower_pools = [], []
+        tower_convs, tower_res, tower_pools = [], [], []
         in_ch = 288
         for out_ch in self._TOWER_FILTERS:
             tower_convs.append(_ConvBlock(in_ch, out_ch, kernel_size=5, bn_momentum=bn_momentum))
+            tower_res.append(_ConvBlock(out_ch, out_ch, kernel_size=1, bn_momentum=bn_momentum))
             tower_pools.append(_AttnPool(out_ch, pool_size=2))
             in_ch = out_ch
         self.tower_convs = nn.ModuleList(tower_convs)
+        self.tower_res   = nn.ModuleList(tower_res)
         self.tower_pools = nn.ModuleList(tower_pools)
 
-        self.crop = 320
         self.bottleneck = _ConvBlock(768, 1536, kernel_size=1, dropout=0.05, bn_momentum=bn_momentum)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.stem_pool(self.stem_conv(x))
-        for conv, pool in zip(self.tower_convs, self.tower_pools):
-            x = pool(conv(x))
-        x = x[:, :, self.crop:-self.crop]   # [B, 768, 896]
-        return self.bottleneck(x)            # [B, 1536, 896]
+        y = self.stem_conv(x)
+        x = self.stem_pool(y + self.stem_res(y))
+        for conv, res, pool in zip(self.tower_convs, self.tower_res, self.tower_pools):
+            y = conv(x)
+            x = pool(y + res(y))
+        return self.bottleneck(x)               # [B, 1536, 1536]
 
 
 # ── Transformer tower ─────────────────────────────────────────────────────────
 class _TransformerTower(nn.Module):
     """
-    Enformer Transformer tower: n_layers× self-attention over 896 tokens.
+    Enformer Transformer tower: n_layers× self-attention over full 1536 tokens.
 
-    Input:  [B, 1536, 896]
-    Output: [B, 896, 1536]
+    Input:  [B, 1536, 1536]   (channels, tokens)
+    Output: [B, 1536, 1536]   (tokens, channels) — note: returns [B, T, C]
     """
     def __init__(
         self,
@@ -176,7 +182,7 @@ class _TransformerTower(nn.Module):
         dropout: float = 0.4,
     ):
         super().__init__()
-        self.pos_bias = _RelativePosBias(n_heads=n_heads, max_len=896)
+        self.pos_bias = _RelativePosBias(n_heads=n_heads, max_len=1536)
         self.layers = nn.ModuleList([
             _TransformerBlock(d_model, n_heads, ffn_dim, dropout)
             for _ in range(n_layers)
@@ -184,28 +190,46 @@ class _TransformerTower(nn.Module):
         self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.permute(0, 2, 1)             # [B, 896, 1536]
+        x = x.permute(0, 2, 1)             # [B, 1536, 1536] → [B, T=1536, C=1536]
         T = x.shape[1]
         attn_bias = self.pos_bias(T)
         for layer in self.layers:
             x = layer(x, attn_bias)
-        return self.norm(x)                 # [B, 896, 1536]
+        return self.norm(x)                 # [B, 1536, 1536]
 
 
 # ── EnformerModel ─────────────────────────────────────────────────────────────
 class Basenji2Model(nn.Module):
+    """
+    Full Enformer-style model:
+      trunk (conv)  → [B, 1536, 1536]
+      transformer   → [B, 1536, 1536]  (over full 1536 tokens)
+      crop 320      → [B, 896, 1536]   (center 896 tokens)
+      final pointwise Conv(1536→1536, k=1, drop=0.05)
+      head Linear(1536→4)              → [B, 896, 4]
+    """
+    _CROP = 320
+
     def __init__(self, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _EnformerTrunk(bn_momentum=bn_momentum)
         self.transformer = _TransformerTower(
             d_model=1536, n_heads=8, ffn_dim=3072, n_layers=11, dropout=0.4,
         )
+        self.final_pointwise = nn.Sequential(
+            nn.LayerNorm(1536),
+            nn.Linear(1536, 1536),
+            nn.Dropout(0.05),
+            nn.GELU(),
+        )
         self.head = nn.Linear(1536, 4)
 
     def forward(self, one_hot: torch.Tensor):
-        x = self.trunk(one_hot)             # [B, 1536, 896]
-        x = self.transformer(x)             # [B, 896, 1536]
-        return {"rt_logits": self.head(x)}  # [B, 896, 4]
+        x = self.trunk(one_hot)                             # [B, 1536, 1536]
+        x = self.transformer(x)                             # [B, 1536, 1536]
+        x = x[:, self._CROP:-self._CROP, :]                 # [B, 896, 1536]
+        x = self.final_pointwise(x)                         # [B, 896, 1536]
+        return {"rt_logits": self.head(x)}                  # [B, 896, 4]
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────

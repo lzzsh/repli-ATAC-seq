@@ -71,7 +71,7 @@ class RepliSeqDataset(Dataset):
             for chrom in chroms:
                 chrom_size = self.genomes[sp.name].chrom_size(chrom)
                 for win_start in range(0, chrom_size - window_size + 1, self._STRIDE):
-                    # first output bin starts after the 16-bin trunk crop
+                    # first output bin starts after the 320-bin trunk crop
                     out_offset = win_start + self._CROP_BINS * self._BIN_SIZE
                     has_label = any(
                         (chrom, ((out_offset + i * self._OUT_BIN + self._OUT_BIN // 2)
@@ -104,14 +104,14 @@ class RepliSeqDataset(Dataset):
         out_offset = win_start + self._CROP_BINS * self._BIN_SIZE
         labels = self._label_queries[s["species"]](
             s["chrom"], out_offset, self._OUT_BINS, self._OUT_BIN
-        )  # [28] int64
+        )  # [896] int64
         if rc:
             labels = labels[::-1].copy()
 
         return {
             "one_hot": torch.tensor(one_hot_encode(seq), dtype=torch.float32),
             "species_id": torch.tensor(s["species_id"], dtype=torch.long),
-            "rt_labels": torch.tensor(labels, dtype=torch.long),  # [28]
+            "rt_labels": torch.tensor(labels, dtype=torch.long),  # [896]
         }
 
 
