@@ -20,26 +20,56 @@ from .eval import evaluate_predictions
 logger = logging.getLogger(__name__)
 
 
-def _validate(model, loader, criterion, device) -> dict:
+def _forward_multi_species(
+    model, batch: dict, criterion, id_to_name: dict
+) -> tuple[dict, torch.Tensor]:
+    """Group batch by species_id, forward each group through its head.
+    Returns (weighted-mean losses dict, logits [B, 896, 4] in original order)."""
+    one_hot     = batch["one_hot"]
+    rt_labels   = batch["rt_labels"]
+    species_ids = batch["species_id"]
+    B = one_hot.shape[0]
+
+    logits_out = torch.empty(B, 896, 4, device=one_hot.device)
+    total_loss = rt_loss = 0.0
+
+    for sp_id in species_ids.unique():
+        sp_name = id_to_name[sp_id.item()]
+        idx = (species_ids == sp_id).nonzero(as_tuple=True)[0]
+        out = model(one_hot[idx], head=sp_name)
+        logits_out[idx] = out["rt_logits"]
+        sub_batch = {"rt_labels": rt_labels[idx]}
+        losses = criterion(out, sub_batch)
+        n = idx.shape[0]
+        total_loss += losses["total"] * n
+        rt_loss    += losses["rt"]    * n
+
+    return {"total": total_loss / B, "rt": rt_loss / B}, logits_out
+
+
+def _validate(model, loader, criterion, device, id_to_name: dict) -> dict:
     model.eval()
-    pp, pt = [], []
+    all_logits, all_labels = [], []
     total_loss = rt_loss = 0.0
     n_batches = 0
     with torch.no_grad():
         for batch in loader:
-            batch = {k: v.to(device) for k, v in batch.items()}
-            out = model.module.forward(batch["one_hot"]) \
-                if isinstance(model, DDP) else model(batch["one_hot"])
-            losses = criterion(out, batch)
+            one_hot    = batch["one_hot"].to(device)
+            rt_labels  = batch["rt_labels"].to(device)
+            species_id = batch["species_id"].to(device)
+            dev_batch  = {**batch, "one_hot": one_hot, "rt_labels": rt_labels,
+                          "species_id": species_id}
+            raw = model.module if isinstance(model, DDP) else model
+            losses, logits = _forward_multi_species(raw, dev_batch, criterion, id_to_name)
             total_loss += losses["total"].item()
-            rt_loss += losses["rt"].item()
-            n_batches += 1
-            pp.append(out["rt_logits"].cpu().numpy())
-            pt.append(batch["rt_labels"].cpu().numpy())
+            rt_loss    += losses["rt"].item()
+            n_batches  += 1
+            all_logits.append(logits.cpu().numpy())
+            all_labels.append(rt_labels.cpu().numpy())
 
-    metrics = evaluate_predictions(np.concatenate(pp), np.concatenate(pt))
+    metrics = evaluate_predictions(np.concatenate(all_logits), np.concatenate(all_labels))
     metrics["val_loss_total"] = total_loss / n_batches
-    metrics["val_loss_rt"] = rt_loss / n_batches
+    metrics["val_loss_rt"]    = rt_loss    / n_batches
     return metrics
 
 
@@ -66,6 +96,7 @@ def train(config_path: str, resume: str | None = None):
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     species_configs = load_manifest(cfg["data"]["manifest"])
+    id_to_name = {sp.species_id: sp.name for sp in species_configs}
 
     train_ds = RepliSeqDataset(
         species_configs, "train",
@@ -91,6 +122,7 @@ def train(config_path: str, resume: str | None = None):
                             shuffle=False, num_workers=4, pin_memory=True)
 
     model = Basenji2Model(
+        species_configs=species_configs,
         bn_momentum=cfg["model"]["bn_momentum"],
     ).to(device)
 
@@ -161,8 +193,10 @@ def train(config_path: str, resume: str | None = None):
         for batch in train_loader:
             batch = {k: v.to(device) for k, v in batch.items()}
             with autocast(enabled=cfg["training"]["mixed_precision"]):
-                out = model(batch["one_hot"])
-                losses = criterion(out, batch)
+                losses, _ = _forward_multi_species(
+                    model.module if isinstance(model, DDP) else model,
+                    batch, criterion, id_to_name
+                )
             scaler.scale(losses["total"] / accum).backward()
             epoch_loss_total += losses["total"].item()
             epoch_loss_rt += losses["rt"].item()
@@ -183,7 +217,7 @@ def train(config_path: str, resume: str | None = None):
             writer.add_scalar("train/loss_rt", epoch_loss_rt / epoch_batches, epoch + 1)
             writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], epoch + 1)
 
-            metrics = _validate(model, val_loader, criterion, device)
+            metrics = _validate(model, val_loader, criterion, device, id_to_name)
             val_loss = metrics["val_loss_total"]
 
             writer.add_scalar("val/loss_total", val_loss, epoch + 1)
