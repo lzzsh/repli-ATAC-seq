@@ -31,7 +31,8 @@ def _forward_multi_species(
     B = one_hot.shape[0]
 
     logits_out = torch.empty(B, 896, 4, device=one_hot.device)
-    total_loss = rt_loss = 0.0
+    total_loss = torch.tensor(0.0, device=one_hot.device)
+    rt_loss    = torch.tensor(0.0, device=one_hot.device)
 
     for sp_id in species_ids.unique():
         sp_name = id_to_name[sp_id.item()]
@@ -54,18 +55,14 @@ def _validate(model, loader, criterion, device, id_to_name: dict) -> dict:
     n_batches = 0
     with torch.no_grad():
         for batch in loader:
-            one_hot    = batch["one_hot"].to(device)
-            rt_labels  = batch["rt_labels"].to(device)
-            species_id = batch["species_id"].to(device)
-            dev_batch  = {**batch, "one_hot": one_hot, "rt_labels": rt_labels,
-                          "species_id": species_id}
+            batch = {k: v.to(device) for k, v in batch.items()}
             raw = model.module if isinstance(model, DDP) else model
-            losses, logits = _forward_multi_species(raw, dev_batch, criterion, id_to_name)
+            losses, logits = _forward_multi_species(raw, batch, criterion, id_to_name)
             total_loss += losses["total"].item()
             rt_loss    += losses["rt"].item()
             n_batches  += 1
             all_logits.append(logits.cpu().numpy())
-            all_labels.append(rt_labels.cpu().numpy())
+            all_labels.append(batch["rt_labels"].cpu().numpy())
 
     metrics = evaluate_predictions(np.concatenate(all_logits), np.concatenate(all_labels))
     metrics["val_loss_total"] = total_loss / n_batches
@@ -152,7 +149,7 @@ def train(config_path: str, resume: str | None = None):
             scaler.load_state_dict(ckpt["scaler"])
         start_epoch   = ckpt.get("epoch", 0)
         best_score    = ckpt.get("best_score", float("inf"))
-        best_f1       = ckpt.get("best_score", 0.0)
+        best_f1       = ckpt.get("best_f1", 0.0)
         global_step   = ckpt.get("global_step", 0)
         if is_master:
             logger.info(f"Resumed from {resume} (epoch {start_epoch}, best_score={best_score:.4f})")
@@ -246,6 +243,7 @@ def train(config_path: str, resume: str | None = None):
                     "cfg": cfg,
                     "epoch": epoch + 1,
                     "best_score": best_score,
+                    "best_f1": best_f1,
                     "global_step": global_step,
                     "metrics": metrics,
                 }, ckpt_dir / "best_model.pt")
