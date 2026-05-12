@@ -98,25 +98,17 @@ def load_gff3_classes(
                 classes[(chrom, start, end)] = name
     return classes
 
-def load_labels(count_tsv: str | Path, species: str, gff3_path: str | Path) -> pd.DataFrame:
+def load_labels(gff3_path: str | Path, species: str) -> pd.DataFrame:
     """
-    Input TSV: chrom, start, end, ES_count, MS_count, LS_count, G1_count.
-    GFF3: replication phase annotations (ES/MS/LS/ESMS/MSLS/ESLS/ESMSLS/NR).
-    Returns DataFrame with RT_class column. All 8 classes are kept.
+    Parse GFF3 replication phase annotations into a DataFrame with columns:
+    chrom, start, end, RT_class, species.
     """
-    df = pd.read_csv(count_tsv, sep="\t")
-    if "#chrom" in df.columns:
-        df = df.rename(columns={"#chrom": "chrom"})
-    for col in ["chrom", "start", "end", "ES_count", "MS_count", "LS_count", "G1_count"]:
-        assert col in df.columns, f"Missing column: {col}"
-
-    df["species"] = species
-
     gff3_classes = load_gff3_classes(gff3_path)
-    df["RT_class"] = df.apply(
-        lambda r: gff3_classes.get((r["chrom"], r["start"], r["end"]), "NR"), axis=1
-    )
-    return df.reset_index(drop=True)
+    rows = [
+        {"chrom": chrom, "start": start, "end": end, "RT_class": cls, "species": species}
+        for (chrom, start, end), cls in gff3_classes.items()
+    ]
+    return pd.DataFrame(rows).reset_index(drop=True)
 
 
 def load_labels_indexed(df: pd.DataFrame):

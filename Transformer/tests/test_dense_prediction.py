@@ -33,7 +33,7 @@ def test_load_labels_indexed_missing_bins_are_nr(sample_df_1024):
 
 def _make_mock_species_config():
     return SpeciesConfig(
-        name="mock", fasta="mock.fa", count_tsv="mock.tsv", gff3="mock.gff3",
+        name="mock", fasta="mock.fa", gff3="mock.gff3",
         train_chroms=["chr01"], val_chroms=[], test_chroms=[], species_id=0,
     )
 

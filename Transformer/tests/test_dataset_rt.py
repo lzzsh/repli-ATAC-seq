@@ -6,7 +6,7 @@ from src.data.dataset import RepliSeqDataset, SpeciesConfig
 
 def _make_sp():
     return SpeciesConfig(
-        name="mock", fasta="mock.fa", count_tsv="mock.tsv", gff3="mock.gff3",
+        name="mock", fasta="mock.fa", gff3="mock.gff3",
         train_chroms=["chr1"], val_chroms=[], test_chroms=[], species_id=0,
     )
 

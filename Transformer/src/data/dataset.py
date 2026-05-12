@@ -15,7 +15,6 @@ from .data_utils import GenomeSequence, get_window_coords, load_labels, load_lab
 class SpeciesConfig:
     name: str
     fasta: str
-    count_tsv: str
     gff3: str
     train_chroms: list[str]
     val_chroms: list[str]
@@ -28,7 +27,7 @@ def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
         cfg = yaml.safe_load(f)
     return [
         SpeciesConfig(
-            name=sp["name"], fasta=sp["fasta"], count_tsv=sp["count_tsv"],
+            name=sp["name"], fasta=sp["fasta"],
             gff3=sp["gff3"],
             train_chroms=sp["train_chroms"], val_chroms=sp["val_chroms"],
             test_chroms=sp["test_chroms"], species_id=i,
@@ -62,7 +61,7 @@ class RepliSeqDataset(Dataset):
 
         for sp in species_configs:
             self.genomes[sp.name] = GenomeSequence(sp.fasta)
-            df = load_labels(sp.count_tsv, sp.name, sp.gff3)
+            df = load_labels(sp.gff3, sp.name)
             chroms = getattr(sp, f"{split}_chroms")
             df = df[df["chrom"].isin(chroms)].reset_index(drop=True)
             self._label_queries[sp.name] = load_labels_indexed(df)
