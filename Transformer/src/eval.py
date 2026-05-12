@@ -39,7 +39,9 @@ def evaluate_predictions(
 
 
 def _load_model(cfg: dict, checkpoint_path: str, device,
-                species_configs=None) -> Basenji2Model:
+                species_configs: list) -> Basenji2Model:
+    assert species_configs is not None and len(species_configs) > 0, \
+        "species_configs must be provided to _load_model"
     ckpt = torch.load(checkpoint_path, map_location=device)
     model = Basenji2Model(
         species_configs=species_configs,
