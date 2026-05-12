@@ -1,8 +1,11 @@
+from __future__ import annotations
 import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint_sequential
+
+from ..data.dataset import SpeciesConfig
 
 
 # ── Positional feature functions (from Enformer) ──────────────────────────────
@@ -282,12 +285,13 @@ class Basenji2Model(nn.Module):
       transformer       → [B, 1536, 1536]
       crop 320          → [B, 896, 1536]
       final_pointwise   BN→GELU→Conv1d(1536→3072)→Dropout(0.05)→GELU → [B, 896, 3072]
-      _heads[head]      Linear(3072→4)                                 → [B, 896, 4]
+      _heads[head: str] Linear(3072→4)                                 → [B, 896, 4]
     """
     _CROP = 320
 
-    def __init__(self, species_configs: list, bn_momentum: float = 0.1):
+    def __init__(self, species_configs: list[SpeciesConfig], bn_momentum: float = 0.1):
         super().__init__()
+        assert len(species_configs) > 0, "species_configs must not be empty"
         self.trunk = _EnformerTrunk(bn_momentum=bn_momentum)
         self.transformer = _TransformerTower()
         self.final_bn   = nn.BatchNorm1d(1536, momentum=bn_momentum)

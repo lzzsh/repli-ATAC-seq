@@ -14,6 +14,7 @@ def test_heads_created_per_species():
     model = Basenji2Model(_make_configs(["rice", "human"]))
     assert set(model._heads.keys()) == {"rice", "human"}
 
+@pytest.mark.slow
 def test_forward_returns_correct_shape():
     model = Basenji2Model(_make_configs(["rice"]))
     x = torch.zeros(2, 4, 196608)
