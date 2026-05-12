@@ -39,20 +39,29 @@ def test_routing_calls_correct_heads():
 
 
 def test_routing_loss_is_weighted_mean():
-    """Loss should be weighted average by group size."""
+    """Loss must be weighted by group size, not a simple average."""
     def fake_forward(one_hot, head):
         n = one_hot.shape[0]
         return {"rt_logits": torch.zeros(n, 896, 4)}
 
     model = MagicMock(side_effect=fake_forward)
     id_to_name = {0: "rice", 1: "human"}
-    criterion = MagicMock(return_value={"total": torch.tensor(1.0), "rt": torch.tensor(1.0)})
+
+    # rice loss=2.0, human loss=0.0; batch: 2 rice + 1 human
+    # weighted mean = (2*2.0 + 1*0.0) / 3 = 4/3 ≈ 1.3333
+    # simple mean would be (2.0 + 0.0) / 2 = 1.0 — different, so test is discriminating
+    call_count = [0]
+    def fake_criterion(out, sub_batch):
+        call_count[0] += 1
+        n = sub_batch["rt_labels"].shape[0]
+        loss_val = 2.0 if n == 2 else 0.0   # rice has 2 samples, human has 1
+        return {"total": torch.tensor(loss_val), "rt": torch.tensor(loss_val)}
 
     from src.trainer import _forward_multi_species
     batch = _make_batch([0, 0, 1])  # 2 rice, 1 human
-    losses, _ = _forward_multi_species(model, batch, criterion, id_to_name)
-    # weighted mean: (2*1.0 + 1*1.0) / 3 = 1.0
-    assert abs(losses["total"].item() - 1.0) < 1e-5
+    losses, _ = _forward_multi_species(model, batch, fake_criterion, id_to_name)
+    expected = (2 * 2.0 + 1 * 0.0) / 3
+    assert abs(losses["total"].item() - expected) < 1e-5
 
 
 def test_routing_logits_shape():
