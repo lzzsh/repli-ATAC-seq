@@ -203,6 +203,7 @@ def train(config_path: str, resume: str | None = None):
         # When a species is exhausted it wraps around so others can finish.
         active = set(sp_names)
         step_i = 0
+        accum_count = 0
         while active:
             sp_name = sp_names[step_i % len(sp_names)]
             step_i += 1
@@ -223,22 +224,25 @@ def train(config_path: str, resume: str | None = None):
             epoch_loss_rt    += losses["rt"].item()
             epoch_batches    += 1
             global_step      += 1
-            if global_step % accum == 0:
+            accum_count      += 1
+            if accum_count % accum == 0:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["training"]["gradient_clip_norm"])
                 scaler.step(optimizer)
                 scaler.update()
                 scheduler.step()
                 optimizer.zero_grad()
+                accum_count = 0
 
         # flush remaining gradients at epoch end
-        if global_step % accum != 0:
+        if accum_count > 0:
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["training"]["gradient_clip_norm"])
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
             optimizer.zero_grad()
+            accum_count = 0
 
         should_stop = torch.tensor(0, device=device)
         if is_master:
