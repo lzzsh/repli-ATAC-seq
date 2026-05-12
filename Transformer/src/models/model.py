@@ -279,32 +279,33 @@ class Basenji2Model(nn.Module):
     """
     Full Enformer-aligned model:
       trunk (conv)      → [B, 1536, 1536]
-      transformer       → [B, 1536, 1536]  (over full 1536 tokens)
+      transformer       → [B, 1536, 1536]
       crop 320          → [B, 896, 1536]
       final_pointwise   BN→GELU→Conv1d(1536→3072)→Dropout(0.05)→GELU → [B, 896, 3072]
-      head Linear(3072→4)                                              → [B, 896, 4]
+      _heads[head]      Linear(3072→4)                                 → [B, 896, 4]
     """
     _CROP = 320
 
-    def __init__(self, bn_momentum: float = 0.1):
+    def __init__(self, species_configs: list, bn_momentum: float = 0.1):
         super().__init__()
         self.trunk = _EnformerTrunk(bn_momentum=bn_momentum)
         self.transformer = _TransformerTower()
         self.final_bn   = nn.BatchNorm1d(1536, momentum=bn_momentum)
         self.final_conv = nn.Conv1d(1536, 3072, kernel_size=1)
         self.final_drop = nn.Dropout(0.05)
-        self.head = nn.Linear(3072, 4)
+        self._heads = nn.ModuleDict({
+            sp.name: nn.Linear(3072, 4) for sp in species_configs
+        })
 
-    def forward(self, one_hot: torch.Tensor):
+    def forward(self, one_hot: torch.Tensor, head: str) -> dict:
         x = self.trunk(one_hot)                             # [B, 1536, 1536]
-        x = self.transformer(x)                             # [B, 1536, 1536] (T, C)
+        x = self.transformer(x)                             # [B, 1536, 1536]
         x = x[:, self._CROP:-self._CROP, :]                 # [B, 896, 1536]
-        x = x.permute(0, 2, 1)                              # [B, 1536, 896] for BN/Conv1d
-        # final_pointwise: BN → GELU → Conv1d(1536→3072) → Dropout → GELU
+        x = x.permute(0, 2, 1)                              # [B, 1536, 896]
         x = _enformer_gelu(self.final_bn(x))
         x = _enformer_gelu(self.final_drop(self.final_conv(x)))  # [B, 3072, 896]
         x = x.permute(0, 2, 1)                              # [B, 896, 3072]
-        return {"rt_logits": self.head(x)}                  # [B, 896, 4]
+        return {"rt_logits": self._heads[head](x)}          # [B, 896, 4]
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
