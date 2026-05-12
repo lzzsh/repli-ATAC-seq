@@ -38,7 +38,7 @@ def _forward_multi_species(
         sp_name = id_to_name[sp_id.item()]
         idx = (species_ids == sp_id).nonzero(as_tuple=True)[0]
         out = model(one_hot[idx], head=sp_name)
-        logits_out[idx] = out["rt_logits"]
+        logits_out[idx] = out["rt_logits"].float()
         sub_batch = {"rt_labels": rt_labels[idx]}
         losses = criterion(out, sub_batch)
         n = idx.shape[0]
