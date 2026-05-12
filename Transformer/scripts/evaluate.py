@@ -8,7 +8,7 @@ python scripts/evaluate.py --mode wt \
 python scripts/evaluate.py --mode cross_species \
     --config src/configs/transformer_wt.yaml \
     --checkpoint outputs/transformer_wt/checkpoints/best_model.pt \
-    --held_out arabidopsis --output outputs/metrics
+    --output outputs/metrics
 """
 import argparse
 import sys
@@ -23,11 +23,9 @@ if __name__ == "__main__":
     parser.add_argument("--config", required=True)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output", default="outputs/metrics")
-    parser.add_argument("--held_out", default=None)
     args = parser.parse_args()
 
     if args.mode == "wt":
         eval_wt(args.config, args.checkpoint, args.output)
     else:
-        assert args.held_out, "--held_out required for cross_species mode"
-        eval_cross_species(args.config, args.checkpoint, args.held_out, args.output)
+        eval_cross_species(args.config, args.checkpoint, args.output)

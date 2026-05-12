@@ -2,11 +2,17 @@
 import torch
 import pytest
 from src.models.model import Basenji2Model, RTClassLoss
+from src.data.dataset import SpeciesConfig
+
+def _make_sp(name="rice"):
+    return SpeciesConfig(name=name, fasta="", gff3="",
+                         train_chroms=[], val_chroms=[], test_chroms=[],
+                         species_id=0)
 
 def test_model_output_shape():
-    model = Basenji2Model()
+    model = Basenji2Model([_make_sp()])
     x = torch.zeros(2, 4, 196608)
-    out = model(x)
+    out = model(x, head="rice")
     assert "rt_logits" in out
     assert out["rt_logits"].shape == (2, 896, 4)
 

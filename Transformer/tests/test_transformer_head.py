@@ -33,19 +33,25 @@ def test_transformer_block_residual():
     assert out.shape == (1, 16, 192)
 
 from src.models.model import Basenji2Model, RTClassLoss
+from src.data.dataset import SpeciesConfig
+
+def _make_sp(name="rice"):
+    return SpeciesConfig(name=name, fasta="", gff3="",
+                         train_chroms=[], val_chroms=[], test_chroms=[],
+                         species_id=0)
 
 def test_model_output_shape_transformer_head():
-    model = Basenji2Model()
+    model = Basenji2Model([_make_sp()])
     x = torch.zeros(1, 4, 196608)
-    out = model(x)
+    out = model(x, head="rice")
     assert out["rt_logits"].shape == (1, 896, 4)
 
 def test_model_loss_finite():
-    model = Basenji2Model()
+    model = Basenji2Model([_make_sp()])
     criterion = RTClassLoss()
     x = torch.zeros(1, 4, 196608)
     labels = torch.randint(0, 4, (1, 896))
-    out = model(x)
+    out = model(x, head="rice")
     loss = criterion(out, {"rt_labels": labels})
     assert torch.isfinite(loss["total"])
     assert loss["total"].item() > 0
