@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 import logging
 
-from .data.dataset import RepliSeqDataset, load_manifest
+from .data.dataset import RepliSeqDataset, SpeciesBalancedSampler, load_manifest
 from .models.model import Basenji2Model, RTClassLoss
 from .eval import evaluate_predictions
 
@@ -108,12 +108,14 @@ def train(config_path: str, resume: str | None = None):
     )
 
     if ddp:
+        # SpeciesBalancedSampler is not DDP-compatible; use DistributedSampler
         train_sampler = DistributedSampler(train_ds, shuffle=True)
         train_loader = DataLoader(train_ds, batch_size=cfg["training"]["batch_size"],
                                   sampler=train_sampler, num_workers=4, pin_memory=True)
     else:
-        train_loader = DataLoader(train_ds, batch_size=cfg["training"]["batch_size"],
-                                  shuffle=True, num_workers=4, pin_memory=True)
+        train_sampler = SpeciesBalancedSampler(train_ds, cfg["training"]["batch_size"])
+        train_loader = DataLoader(train_ds, batch_sampler=train_sampler,
+                                  num_workers=4, pin_memory=True)
 
     val_loader = DataLoader(val_ds, batch_size=cfg["training"]["batch_size"],
                             shuffle=False, num_workers=4, pin_memory=True)
