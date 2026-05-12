@@ -2,10 +2,9 @@ import random
 import numpy as np
 import torch
 import yaml
-from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Dataset
 
 from .data_utils import GenomeSequence, get_window_coords, load_labels, load_labels_indexed, reverse_complement, RT_CLASS_MAP, one_hot_encode
 
@@ -116,36 +115,3 @@ class RepliSeqDataset(Dataset):
             "rt_labels": torch.tensor(labels, dtype=torch.long),  # [896]
         }
 
-
-# ── sampler ───────────────────────────────────────────────────────────────────
-class SpeciesBalancedSampler(Sampler):
-    """Equal samples per species per batch; small species are over-sampled."""
-
-    def __init__(self, dataset: RepliSeqDataset, batch_size: int):
-        species_idx: dict[str, list[int]] = defaultdict(list)
-        for i, s in enumerate(dataset.samples):
-            species_idx[s["species"]].append(i)
-        self.names = list(species_idx.keys())
-        self.idx = {k: np.array(v) for k, v in species_idx.items()}
-        self.sps = max(1, batch_size // len(self.names))
-        self.n_batches = max(len(v) for v in self.idx.values()) // self.sps
-
-    def __iter__(self):
-        shuffled = {k: np.random.permutation(v) for k, v in self.idx.items()}
-        ptr = {k: 0 for k in self.names}
-        for _ in range(self.n_batches):
-            batch = []
-            for sp in self.names:
-                arr, p, n = shuffled[sp], ptr[sp], self.sps
-                if p + n > len(arr):
-                    extra = (p + n) - len(arr)
-                    chunk = np.concatenate([arr[p:], arr[:extra]])
-                    ptr[sp] = extra
-                else:
-                    chunk = arr[p: p + n]
-                    ptr[sp] = p + n
-                batch.extend(chunk.tolist())
-            yield batch
-
-    def __len__(self) -> int:
-        return self.n_batches

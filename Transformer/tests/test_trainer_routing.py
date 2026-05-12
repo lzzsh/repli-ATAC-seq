@@ -1,99 +1,80 @@
-# tests/test_trainer_routing.py
 import torch
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+from src.data.dataset import SpeciesConfig
 
 
-def _make_batch(species_ids: list[int]):
-    B = len(species_ids)
+def _make_sp(name, sid):
+    return SpeciesConfig(name=name, fasta="", gff3="",
+                         train_chroms=[], val_chroms=[], test_chroms=[],
+                         species_id=sid)
+
+
+def _make_batch(n=2):
     return {
-        "one_hot":    torch.zeros(B, 4, 196608),
-        "rt_labels":  torch.zeros(B, 896, dtype=torch.long),
-        "species_id": torch.tensor(species_ids, dtype=torch.long),
+        "one_hot":    torch.zeros(n, 4, 196608),
+        "rt_labels":  torch.zeros(n, 896, dtype=torch.long),
+        "species_id": torch.zeros(n, dtype=torch.long),
     }
 
 
-def test_routing_calls_correct_heads():
-    """Each species group must call model with its own head name, exactly once."""
-    called_heads = []
-    sample_counts = {}
+def test_make_loaders_creates_one_loader_per_species():
+    """_make_loaders returns a dict keyed by species name."""
+    cfg = {
+        "data": {"input_window_length": 196608},
+        "augmentation": {"rc_prob": 0.0, "shift_max": 0},
+        "training": {"batch_size": 2},
+    }
+    mock_ds = MagicMock()
+    mock_ds.__len__ = MagicMock(return_value=4)
+    with patch("src.trainer.RepliSeqDataset", return_value=mock_ds), \
+         patch("src.trainer.DataLoader", return_value=MagicMock()):
+        from src.trainer import _make_loaders
+        loaders = _make_loaders([_make_sp("rice", 0), _make_sp("maize", 1)],
+                                "train", cfg)
+    assert set(loaders.keys()) == {"rice", "maize"}
+
+
+def test_validate_calls_correct_head_per_species():
+    """_validate must call model with head=sp_name for each species loader."""
+    called = []
 
     def fake_forward(one_hot, head):
-        called_heads.append(head)
-        sample_counts[head] = one_hot.shape[0]
-        n = one_hot.shape[0]
-        return {"rt_logits": torch.zeros(n, 896, 4)}
+        called.append(head)
+        return {"rt_logits": torch.zeros(one_hot.shape[0], 896, 4)}
 
     model = MagicMock(side_effect=fake_forward)
-    id_to_name = {0: "rice", 1: "human"}
-
-    from src.trainer import _forward_multi_species
-    batch = _make_batch([0, 1, 0])  # rice, human, rice
     criterion = MagicMock(return_value={"total": torch.tensor(0.0), "rt": torch.tensor(0.0)})
-    _forward_multi_species(model, batch, criterion, id_to_name)
-    assert sorted(called_heads) == ["human", "rice"]
-    assert called_heads.count("rice") == 1   # called once with 2 samples grouped
-    assert called_heads.count("human") == 1  # called once with 1 sample
-    # rice was called with 2 samples, human with 1
-    assert sample_counts["rice"] == 2
-    assert sample_counts["human"] == 1
+
+    val_loaders = {
+        "rice":  [_make_batch(2)],
+        "maize": [_make_batch(2)],
+    }
+
+    from src.trainer import _validate
+    _validate(model, val_loaders, criterion, torch.device("cpu"))
+    assert "rice"  in called
+    assert "maize" in called
+    assert called.count("rice")  == 1
+    assert called.count("maize") == 1
 
 
-def test_routing_loss_is_weighted_mean():
-    """Loss must be weighted by group size, not a simple average."""
-    def fake_forward(one_hot, head):
-        n = one_hot.shape[0]
-        return {"rt_logits": torch.zeros(n, 896, 4)}
-
-    model = MagicMock(side_effect=fake_forward)
-    id_to_name = {0: "rice", 1: "human"}
-
-    # rice loss=2.0, human loss=0.0; batch: 2 rice + 1 human
-    # weighted mean = (2*2.0 + 1*0.0) / 3 = 4/3 ≈ 1.3333
-    # simple mean would be (2.0 + 0.0) / 2 = 1.0 — different, so test is discriminating
+def test_validate_aggregates_metrics_across_species():
+    """_validate loss should average across all batches from all species."""
     call_count = [0]
-    def fake_criterion(out, sub_batch):
+
+    def fake_forward(one_hot, head):
         call_count[0] += 1
-        n = sub_batch["rt_labels"].shape[0]
-        loss_val = 2.0 if n == 2 else 0.0   # rice has 2 samples, human has 1
-        return {"total": torch.tensor(loss_val), "rt": torch.tensor(loss_val)}
-
-    from src.trainer import _forward_multi_species
-    batch = _make_batch([0, 0, 1])  # 2 rice, 1 human
-    losses, _ = _forward_multi_species(model, batch, fake_criterion, id_to_name)
-    expected = (2 * 2.0 + 1 * 0.0) / 3
-    assert abs(losses["total"].item() - expected) < 1e-5
-
-
-def test_routing_logits_shape():
-    """Returned logits must be [B, 896, 4] in original order."""
-    def fake_forward(one_hot, head):
-        n = one_hot.shape[0]
-        return {"rt_logits": torch.zeros(n, 896, 4)}
+        return {"rt_logits": torch.zeros(one_hot.shape[0], 896, 4)}
 
     model = MagicMock(side_effect=fake_forward)
-    id_to_name = {0: "rice", 1: "human"}
-    criterion = MagicMock(return_value={"total": torch.tensor(0.0), "rt": torch.tensor(0.0)})
+    criterion = MagicMock(return_value={"total": torch.tensor(1.0), "rt": torch.tensor(1.0)})
 
-    from src.trainer import _forward_multi_species
-    batch = _make_batch([0, 1, 0])
-    _, logits = _forward_multi_species(model, batch, criterion, id_to_name)
-    assert logits.shape == (3, 896, 4)
+    val_loaders = {
+        "rice":  [_make_batch(2), _make_batch(2)],  # 2 batches
+        "maize": [_make_batch(2)],                   # 1 batch
+    }
 
-
-def test_routing_logits_order():
-    """Logits must be placed back in original batch order."""
-    def fake_forward(one_hot, head):
-        n = one_hot.shape[0]
-        val = 1.0 if head == "rice" else 2.0
-        return {"rt_logits": torch.full((n, 896, 4), val)}
-
-    model = MagicMock(side_effect=fake_forward)
-    id_to_name = {0: "rice", 1: "human"}
-    criterion = MagicMock(return_value={"total": torch.tensor(0.0), "rt": torch.tensor(0.0)})
-
-    from src.trainer import _forward_multi_species
-    batch = _make_batch([0, 1, 0])  # rice, human, rice
-    _, logits = _forward_multi_species(model, batch, criterion, id_to_name)
-    assert logits[0, 0, 0].item() == 1.0   # rice
-    assert logits[1, 0, 0].item() == 2.0   # human
-    assert logits[2, 0, 0].item() == 1.0   # rice
+    from src.trainer import _validate
+    metrics = _validate(model, val_loaders, criterion, torch.device("cpu"))
+    assert call_count[0] == 3  # 2 rice + 1 maize
+    assert abs(metrics["val_loss_total"] - 1.0) < 1e-5  # all losses = 1.0

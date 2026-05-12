@@ -13,56 +13,53 @@ from pathlib import Path
 import yaml
 import logging
 
-from .data.dataset import RepliSeqDataset, SpeciesBalancedSampler, load_manifest
+from .data.dataset import RepliSeqDataset, load_manifest
 from .models.model import Basenji2Model, RTClassLoss
 from .eval import evaluate_predictions
 
 logger = logging.getLogger(__name__)
 
 
-def _forward_multi_species(
-    model, batch: dict, criterion, id_to_name: dict
-) -> tuple[dict, torch.Tensor]:
-    """Group batch by species_id, forward each group through its head.
-    Returns (weighted-mean losses dict, logits [B, 896, 4] in original order)."""
-    one_hot     = batch["one_hot"]
-    rt_labels   = batch["rt_labels"]
-    species_ids = batch["species_id"]
-    B = one_hot.shape[0]
-
-    logits_out = torch.empty(B, 896, 4, device=one_hot.device)
-    total_loss = torch.tensor(0.0, device=one_hot.device)
-    rt_loss    = torch.tensor(0.0, device=one_hot.device)
-
-    for sp_id in species_ids.unique():
-        sp_name = id_to_name[sp_id.item()]
-        idx = (species_ids == sp_id).nonzero(as_tuple=True)[0]
-        out = model(one_hot[idx], head=sp_name)
-        logits_out[idx] = out["rt_logits"].float()
-        sub_batch = {"rt_labels": rt_labels[idx]}
-        losses = criterion(out, sub_batch)
-        n = idx.shape[0]
-        total_loss += losses["total"] * n
-        rt_loss    += losses["rt"]    * n
-
-    return {"total": total_loss / B, "rt": rt_loss / B}, logits_out
+def _make_loaders(species_configs, split: str, cfg: dict,
+                  ddp: bool = False, rank: int = 0, world_size: int = 1) -> dict:
+    """Create one DataLoader per species for the given split."""
+    loaders = {}
+    for sp in species_configs:
+        ds = RepliSeqDataset(
+            [sp], split,
+            window_size=cfg["data"]["input_window_length"],
+            rc_prob=cfg["augmentation"]["rc_prob"] if split == "train" else 0.0,
+            shift_max=cfg["augmentation"].get("shift_max", 0) if split == "train" else 0,
+        )
+        if ddp:
+            sampler = DistributedSampler(ds, num_replicas=world_size, rank=rank,
+                                         shuffle=(split == "train"))
+            loader = DataLoader(ds, batch_size=cfg["training"]["batch_size"],
+                                sampler=sampler, num_workers=4, pin_memory=True)
+        else:
+            loader = DataLoader(ds, batch_size=cfg["training"]["batch_size"],
+                                shuffle=(split == "train"), num_workers=4, pin_memory=True)
+        loaders[sp.name] = loader
+    return loaders
 
 
-def _validate(model, loader, criterion, device, id_to_name: dict) -> dict:
+def _validate(model, val_loaders: dict, criterion, device) -> dict:
     model.eval()
     all_logits, all_labels = [], []
     total_loss = rt_loss = 0.0
     n_batches = 0
     with torch.no_grad():
-        for batch in loader:
-            batch = {k: v.to(device) for k, v in batch.items()}
-            raw = model.module if isinstance(model, DDP) else model
-            losses, logits = _forward_multi_species(raw, batch, criterion, id_to_name)
-            total_loss += losses["total"].item()
-            rt_loss    += losses["rt"].item()
-            n_batches  += 1
-            all_logits.append(logits.cpu().numpy())
-            all_labels.append(batch["rt_labels"].cpu().numpy())
+        for sp_name, loader in val_loaders.items():
+            for batch in loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                raw = model.module if isinstance(model, DDP) else model
+                out = raw(batch["one_hot"], head=sp_name)
+                losses = criterion(out, batch)
+                total_loss += losses["total"].item()
+                rt_loss    += losses["rt"].item()
+                n_batches  += 1
+                all_logits.append(out["rt_logits"].float().cpu().numpy())
+                all_labels.append(batch["rt_labels"].cpu().numpy())
 
     metrics = evaluate_predictions(np.concatenate(all_logits), np.concatenate(all_labels))
     metrics["val_loss_total"] = total_loss / n_batches
@@ -93,32 +90,10 @@ def train(config_path: str, resume: str | None = None):
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     species_configs = load_manifest(cfg["data"]["manifest"])
-    id_to_name = {sp.species_id: sp.name for sp in species_configs}
 
-    train_ds = RepliSeqDataset(
-        species_configs, "train",
-        window_size=cfg["data"]["input_window_length"],
-        rc_prob=cfg["augmentation"]["rc_prob"],
-        shift_max=cfg["augmentation"].get("shift_max", 0),
-    )
-    val_ds = RepliSeqDataset(
-        species_configs, "val",
-        window_size=cfg["data"]["input_window_length"],
-        rc_prob=0.0,
-    )
-
-    if ddp:
-        # SpeciesBalancedSampler is not DDP-compatible; use DistributedSampler
-        train_sampler = DistributedSampler(train_ds, shuffle=True)
-        train_loader = DataLoader(train_ds, batch_size=cfg["training"]["batch_size"],
-                                  sampler=train_sampler, num_workers=4, pin_memory=True)
-    else:
-        train_sampler = SpeciesBalancedSampler(train_ds, cfg["training"]["batch_size"])
-        train_loader = DataLoader(train_ds, batch_sampler=train_sampler,
-                                  num_workers=4, pin_memory=True)
-
-    val_loader = DataLoader(val_ds, batch_size=cfg["training"]["batch_size"],
-                            shuffle=False, num_workers=4, pin_memory=True)
+    world_size = dist.get_world_size() if ddp else 1
+    train_loaders = _make_loaders(species_configs, "train", cfg, ddp, rank, world_size)
+    val_loaders   = _make_loaders(species_configs, "val",   cfg, ddp, rank, world_size)
 
     model = Basenji2Model(
         species_configs=species_configs,
@@ -167,7 +142,7 @@ def train(config_path: str, resume: str | None = None):
     early_stop_patience = cfg["training"]["early_stopping_patience"]
 
     warmup_steps = cfg["training"].get("warmup_steps", 1000)
-    total_steps = cfg["training"]["max_epochs"] * len(train_loader) // accum
+    total_steps = cfg["training"]["max_epochs"] * max(len(l) for l in train_loaders.values()) // accum
 
     def _lr_lambda(step: int) -> float:
         if step < warmup_steps:
@@ -183,24 +158,36 @@ def train(config_path: str, resume: str | None = None):
 
     for epoch in range(start_epoch, cfg["training"]["max_epochs"]):
         if ddp:
-            train_sampler.set_epoch(epoch)
+            for loader in train_loaders.values():
+                loader.sampler.set_epoch(epoch)
         model.train()
         optimizer.zero_grad()
         epoch_loss_total = epoch_loss_rt = 0.0
         epoch_batches = 0
         t0 = time.time()
-        for batch in train_loader:
+
+        sp_names = list(train_loaders.keys())
+        iterators = {sp: iter(loader) for sp, loader in train_loaders.items()}
+        n_steps = max(len(loader) for loader in train_loaders.values())
+
+        for step_i in range(n_steps):
+            sp_name = sp_names[step_i % len(sp_names)]
+            try:
+                batch = next(iterators[sp_name])
+            except StopIteration:
+                iterators[sp_name] = iter(train_loaders[sp_name])
+                batch = next(iterators[sp_name])
+
             batch = {k: v.to(device) for k, v in batch.items()}
+            raw = model.module if isinstance(model, DDP) else model
             with autocast(enabled=cfg["training"]["mixed_precision"]):
-                losses, _ = _forward_multi_species(
-                    model.module if isinstance(model, DDP) else model,
-                    batch, criterion, id_to_name
-                )
+                out = raw(batch["one_hot"], head=sp_name)
+                losses = criterion(out, batch)
             scaler.scale(losses["total"] / accum).backward()
             epoch_loss_total += losses["total"].item()
-            epoch_loss_rt += losses["rt"].item()
-            epoch_batches += 1
-            global_step += 1
+            epoch_loss_rt    += losses["rt"].item()
+            epoch_batches    += 1
+            global_step      += 1
             if global_step % accum == 0:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["training"]["gradient_clip_norm"])
@@ -216,7 +203,7 @@ def train(config_path: str, resume: str | None = None):
             writer.add_scalar("train/loss_rt", epoch_loss_rt / epoch_batches, epoch + 1)
             writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], epoch + 1)
 
-            metrics = _validate(model, val_loader, criterion, device, id_to_name)
+            metrics = _validate(model, val_loaders, criterion, device)
             val_loss = metrics["val_loss_total"]
 
             writer.add_scalar("val/loss_total", val_loss, epoch + 1)
