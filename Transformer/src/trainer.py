@@ -48,8 +48,10 @@ def _validate(model, val_loaders: dict, criterion, device) -> dict:
     all_logits, all_labels = [], []
     total_loss = rt_loss = 0.0
     n_batches = 0
+    per_species: dict[str, dict] = {}
     with torch.no_grad():
         for sp_name, loader in val_loaders.items():
+            sp_logits, sp_labels = [], []
             for batch in loader:
                 batch = {k: v.to(device) for k, v in batch.items()}
                 raw = model.module if isinstance(model, DDP) else model
@@ -58,12 +60,38 @@ def _validate(model, val_loaders: dict, criterion, device) -> dict:
                 total_loss += losses["total"].item()
                 rt_loss    += losses["rt"].item()
                 n_batches  += 1
-                all_logits.append(out["rt_logits"].float().cpu().numpy())
-                all_labels.append(batch["rt_labels"].cpu().numpy())
+                sp_logits.append(out["rt_logits"].float().cpu().numpy())
+                sp_labels.append(batch["rt_labels"].cpu().numpy())
+            sp_log = np.concatenate(sp_logits)
+            sp_lab = np.concatenate(sp_labels)
+            # exclude ignore bins from per-species metrics
+            valid = sp_lab.reshape(-1) != -1
+            if valid.any():
+                per_species[sp_name] = evaluate_predictions(
+                    sp_log.reshape(-1, 4)[valid], sp_lab.reshape(-1)[valid]
+                )
+            all_logits.append(sp_log)
+            all_labels.append(sp_lab)
 
-    metrics = evaluate_predictions(np.concatenate(all_logits), np.concatenate(all_labels))
-    metrics["val_loss_total"] = total_loss / n_batches
-    metrics["val_loss_rt"]    = rt_loss    / n_batches
+    # aggregate across species (ignore bins excluded)
+    flat_log = np.concatenate(all_logits).reshape(-1, 4)
+    flat_lab = np.concatenate(all_labels).reshape(-1)
+    valid = flat_lab != -1
+    metrics = evaluate_predictions(flat_log[valid], flat_lab[valid]) if valid.any() else {}
+
+    metrics["val_loss_total"] = total_loss / max(n_batches, 1)
+    metrics["val_loss_rt"]    = rt_loss    / max(n_batches, 1)
+
+    # per-species macro F1 (used for early stopping)
+    if per_species:
+        metrics["val_macro_f1_mean"] = float(
+            np.mean([m["macro_f1"] for m in per_species.values()])
+        )
+    for sp_name, m in per_species.items():
+        for k, v in m.items():
+            if isinstance(v, float):
+                metrics[f"{sp_name}/{k}"] = v
+
     return metrics
 
 
@@ -101,7 +129,7 @@ def train(config_path: str, resume: str | None = None):
     ).to(device)
 
     if ddp:
-        model = DDP(model, device_ids=[local_rank])
+        model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
 
     class_weights = cfg.get("loss", {}).get("class_weights", None)
     criterion = RTClassLoss(class_weights=class_weights).to(device)
@@ -114,7 +142,7 @@ def train(config_path: str, resume: str | None = None):
     scaler = GradScaler(enabled=cfg["training"]["mixed_precision"])
 
     start_epoch = 0
-    best_score, best_f1, patience, global_step = float("inf"), 0.0, 0, 0
+    best_score, best_f1, patience, global_step = 0.0, 0.0, 0, 0
 
     if resume:
         ckpt = torch.load(resume, map_location=device)
@@ -125,7 +153,7 @@ def train(config_path: str, resume: str | None = None):
         if "scaler" in ckpt:
             scaler.load_state_dict(ckpt["scaler"])
         start_epoch   = ckpt.get("epoch", 0)
-        best_score    = ckpt.get("best_score", float("inf"))
+        best_score    = ckpt.get("best_score", 0.0)
         best_f1       = ckpt.get("best_f1", 0.0)
         global_step   = ckpt.get("global_step", 0)
         if is_master:
@@ -142,7 +170,9 @@ def train(config_path: str, resume: str | None = None):
     early_stop_patience = cfg["training"]["early_stopping_patience"]
 
     warmup_steps = cfg["training"].get("warmup_steps", 1000)
-    total_steps = cfg["training"]["max_epochs"] * max(len(l) for l in train_loaders.values()) // accum
+    # actual steps per epoch ≈ sum of all per-species loader lengths
+    steps_per_epoch = sum(len(l) for l in train_loaders.values())
+    total_steps = cfg["training"]["max_epochs"] * steps_per_epoch // accum
 
     def _lr_lambda(step: int) -> float:
         if step < warmup_steps:
@@ -168,20 +198,25 @@ def train(config_path: str, resume: str | None = None):
 
         sp_names = list(train_loaders.keys())
         iterators = {sp: iter(loader) for sp, loader in train_loaders.items()}
-        n_steps = max(len(loader) for loader in train_loaders.values())
-
-        for step_i in range(n_steps):
+        # Each species runs a full epoch; total steps = sum of all loader lengths.
+        # Round-robin ensures interleaving: rice, maize, arabidopsis, rice, ...
+        # When a species is exhausted it wraps around so others can finish.
+        active = set(sp_names)
+        step_i = 0
+        while active:
             sp_name = sp_names[step_i % len(sp_names)]
+            step_i += 1
+            if sp_name not in active:
+                continue
             try:
                 batch = next(iterators[sp_name])
             except StopIteration:
-                iterators[sp_name] = iter(train_loaders[sp_name])
-                batch = next(iterators[sp_name])
+                active.discard(sp_name)
+                continue
 
             batch = {k: v.to(device) for k, v in batch.items()}
-            raw = model.module if isinstance(model, DDP) else model
             with autocast(enabled=cfg["training"]["mixed_precision"]):
-                out = raw(batch["one_hot"], head=sp_name)
+                out = model(batch["one_hot"], head=sp_name)
                 losses = criterion(out, batch)
             scaler.scale(losses["total"] / accum).backward()
             epoch_loss_total += losses["total"].item()
@@ -196,6 +231,15 @@ def train(config_path: str, resume: str | None = None):
                 scheduler.step()
                 optimizer.zero_grad()
 
+        # flush remaining gradients at epoch end
+        if global_step % accum != 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["training"]["gradient_clip_norm"])
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+            optimizer.zero_grad()
+
         should_stop = torch.tensor(0, device=device)
         if is_master:
             train_loss_total = epoch_loss_total / epoch_batches
@@ -205,6 +249,7 @@ def train(config_path: str, resume: str | None = None):
 
             metrics = _validate(model, val_loaders, criterion, device)
             val_loss = metrics["val_loss_total"]
+            val_f1   = metrics.get("val_macro_f1_mean", metrics.get("macro_f1", 0.0))
 
             writer.add_scalar("val/loss_total", val_loss, epoch + 1)
             writer.add_scalar("val/loss_rt", metrics["val_loss_rt"], epoch + 1)
@@ -214,14 +259,10 @@ def train(config_path: str, resume: str | None = None):
             logger.info(
                 f"epoch={epoch+1} time={time.time()-t0:.0f}s "
                 f"train_loss={train_loss_total:.4f} val_loss={val_loss:.4f} "
-                f"macro_f1={metrics.get('macro_f1', float('nan')):.4f} "
-                f"acc_ES={metrics.get('acc_ES', float('nan')):.4f} "
-                f"acc_MS={metrics.get('acc_MS', float('nan')):.4f} "
-                f"acc_LS={metrics.get('acc_LS', float('nan')):.4f} "
-                f"acc_NR={metrics.get('acc_NR', float('nan')):.4f}"
+                f"val_macro_f1={val_f1:.4f}"
             )
-            if val_loss < best_score:
-                best_score = val_loss
+            if val_f1 > best_score:
+                best_score = val_f1
                 patience = 0
                 raw = model.module if isinstance(model, DDP) else model
                 torch.save({
@@ -232,16 +273,13 @@ def train(config_path: str, resume: str | None = None):
                     "cfg": cfg,
                     "epoch": epoch + 1,
                     "best_score": best_score,
-                    "best_f1": best_f1,
+                    "best_f1": best_score,
                     "global_step": global_step,
                     "metrics": metrics,
                 }, ckpt_dir / "best_model.pt")
                 logger.info("  → new best checkpoint saved")
             else:
                 patience += 1
-            macro_f1 = metrics.get("macro_f1", 0.0)
-            if macro_f1 > best_f1:
-                best_f1 = macro_f1
             if patience >= early_stop_patience:
                 logger.info("Early stopping.")
                 should_stop = torch.tensor(1, device=device)

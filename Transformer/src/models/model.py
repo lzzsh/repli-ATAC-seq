@@ -324,5 +324,6 @@ class RTClassLoss(nn.Module):
     def forward(self, outputs: dict, batch: dict) -> dict:
         logits = outputs["rt_logits"]
         labels = batch["rt_labels"]
-        loss = F.cross_entropy(logits.reshape(-1, 4), labels.reshape(-1), weight=self.weight)
+        loss = F.cross_entropy(logits.reshape(-1, 4), labels.reshape(-1),
+                               weight=self.weight, ignore_index=-1)
         return {"total": loss, "rt": loss}

@@ -111,22 +111,25 @@ def load_labels(gff3_path: str | Path, species: str) -> pd.DataFrame:
     return pd.DataFrame(rows).reset_index(drop=True)
 
 
+IGNORE_LABEL = -1   # bins with no GFF3 annotation; excluded from loss and metrics
+
+
 def load_labels_indexed(df: pd.DataFrame):
     """
     Returns query(chrom, genomic_start, n_bins, model_bin_size) -> np.ndarray [n_bins] int64
     Each model bin maps to the label bin containing its center coordinate.
-    Missing bins default to NR (3).
+    Bins with no annotation are set to IGNORE_LABEL (-1), not NR.
     """
     grouped = {}
     for chrom, grp in df.groupby("chrom"):
         label_bin_size = int(grp["end"].iloc[0] - grp["start"].iloc[0])
         keys = grp["start"].values.astype(int)
-        vals = grp["RT_class"].map(RT_CLASS_MAP).fillna(3).values.astype(np.int64)
+        vals = grp["RT_class"].map(RT_CLASS_MAP).fillna(IGNORE_LABEL).values.astype(np.int64)
         idx_map = dict(zip(keys, vals))
         grouped[chrom] = (label_bin_size, idx_map)
 
     def query(chrom: str, genomic_start: int, n_bins: int, model_bin_size: int) -> np.ndarray:
-        out = np.full(n_bins, RT_CLASS_MAP["NR"], dtype=np.int64)
+        out = np.full(n_bins, IGNORE_LABEL, dtype=np.int64)
         if chrom not in grouped:
             return out
         label_bin_size, idx_map = grouped[chrom]

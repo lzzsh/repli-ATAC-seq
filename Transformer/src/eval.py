@@ -18,12 +18,16 @@ def evaluate_predictions(
 ) -> dict:
     """
     rt_pred_logits: [N, 896, 4] or [N, 4]
-    rt_true:        [N, 896] or [N] int64
+    rt_true:        [N, 896] or [N] int64  (bins with label -1 are excluded)
     """
     if rt_pred_logits.ndim == 3:
         N, T, C = rt_pred_logits.shape
         rt_pred_logits = rt_pred_logits.reshape(N * T, C)
         rt_true = rt_true.reshape(N * T)
+
+    valid = rt_true != -1
+    rt_pred_logits = rt_pred_logits[valid]
+    rt_true = rt_true[valid]
 
     pred_cls = rt_pred_logits.argmax(axis=1)
     m = {}

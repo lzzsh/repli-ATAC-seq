@@ -25,10 +25,10 @@ def test_load_labels_indexed_returns_array(sample_df_1024):
     assert result.dtype == np.int64
 
 
-def test_load_labels_indexed_missing_bins_are_nr(sample_df_1024):
+def test_load_labels_indexed_missing_bins_are_ignore(sample_df_1024):
     query = load_labels_indexed(sample_df_1024)
     result = query("chr01", 9999 * 1024, 28, 1024)
-    assert (result == 3).all()  # NR=3
+    assert (result == -1).all()  # IGNORE_LABEL=-1
 
 
 def _make_mock_species_config():
