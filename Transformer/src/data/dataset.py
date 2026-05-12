@@ -25,14 +25,17 @@ class SpeciesConfig:
 def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
     with open(manifest_yaml) as f:
         cfg = yaml.safe_load(f)
+    ids = [sp["species_id"] for sp in cfg["species"]]
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"Duplicate species_id values in manifest: {ids}")
     return [
         SpeciesConfig(
             name=sp["name"], fasta=sp["fasta"],
             gff3=sp["gff3"],
             train_chroms=sp["train_chroms"], val_chroms=sp["val_chroms"],
-            test_chroms=sp["test_chroms"], species_id=i,
+            test_chroms=sp["test_chroms"], species_id=sp["species_id"],
         )
-        for i, sp in enumerate(cfg["species"])
+        for sp in cfg["species"]
     ]
 
 
