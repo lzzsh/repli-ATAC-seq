@@ -34,7 +34,7 @@ def test_enformer_trunk_no_dilated():
     trunk = _EnformerTrunk()
     assert not hasattr(trunk, 'dilated_tower')
 
-from src.models.model import Basenji2Model, RTClassLoss
+from src.models.model import RepliformerModel, RTClassLoss
 from src.data.dataset import SpeciesConfig
 
 def _make_sp(name="rice"):
@@ -43,13 +43,13 @@ def _make_sp(name="rice"):
                          species_id=0)
 
 def test_model_output_shape():
-    model = Basenji2Model([_make_sp()])
+    model = RepliformerModel([_make_sp()])
     x = torch.zeros(1, 4, 196608)
     out = model(x, head="rice")
     assert out["rt_logits"].shape == (1, 896, 4)
 
 def test_model_loss_finite():
-    model = Basenji2Model([_make_sp()])
+    model = RepliformerModel([_make_sp()])
     criterion = RTClassLoss()
     x = torch.zeros(1, 4, 196608)
     labels = torch.randint(0, 4, (1, 896))

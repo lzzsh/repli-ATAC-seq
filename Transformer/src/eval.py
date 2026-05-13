@@ -7,7 +7,8 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import f1_score, confusion_matrix
 
 from .data.dataset import RepliSeqDataset, load_manifest
-from .models.model import Basenji2Model
+from .models.model import RepliformerModel
+from .models.config_model import RepliformerConfig
 
 _CLASS_NAMES = ["ES", "MS", "LS", "NR"]
 
@@ -43,13 +44,13 @@ def evaluate_predictions(
 
 
 def _load_model(cfg: dict, checkpoint_path: str, device,
-                species_configs: list) -> Basenji2Model:
+                species_configs: list) -> RepliformerModel:
     assert species_configs is not None and len(species_configs) > 0, \
         "species_configs must be provided to _load_model"
     ckpt = torch.load(checkpoint_path, map_location=device)
-    model = Basenji2Model(
+    model = RepliformerModel(
         species_configs=species_configs,
-        bn_momentum=cfg["model"]["bn_momentum"],
+        model_cfg=RepliformerConfig(**cfg.get("model", {})),
     )
     model.load_state_dict(ckpt["model"])
     return model.to(device).eval()

@@ -6,7 +6,7 @@ def test_enformer_trunk_output_shape():
     trunk = _EnformerTrunk()
     x = torch.zeros(1, 4, 196608)
     out = trunk(x)
-    # 196608/128=1536 tokens, bottleneck → 1536 channels; crop happens in Basenji2Model
+    # 196608/128=1536 tokens, bottleneck → 1536 channels; crop happens in RepliformerModel
     assert out.shape == (1, 1536, 1536)
 
 def test_enformer_trunk_channels():
@@ -15,7 +15,7 @@ def test_enformer_trunk_channels():
     out = trunk(x)
     assert out.shape[1] == 1536
 
-from src.models.model import Basenji2Model, RTClassLoss
+from src.models.model import RepliformerModel, RTClassLoss
 from src.data.dataset import SpeciesConfig
 
 def _make_sp(name="rice"):
@@ -24,13 +24,13 @@ def _make_sp(name="rice"):
                          species_id=0)
 
 def test_model_output_shape():
-    model = Basenji2Model([_make_sp()])
+    model = RepliformerModel([_make_sp()])
     x = torch.zeros(1, 4, 196608)
     out = model(x, head="rice")
     assert out["rt_logits"].shape == (1, 896, 4)
 
 def test_model_loss_finite():
-    model = Basenji2Model([_make_sp()])
+    model = RepliformerModel([_make_sp()])
     criterion = RTClassLoss()
     x = torch.zeros(1, 4, 196608)
     labels = torch.randint(0, 4, (1, 896))
@@ -40,7 +40,7 @@ def test_model_loss_finite():
     assert loss["total"].item() > 0
 
 def test_model_param_count():
-    model = Basenji2Model([_make_sp()])
+    model = RepliformerModel([_make_sp()])
     n = sum(p.numel() for p in model.parameters())
     assert 100_000_000 < n < 250_000_000
 

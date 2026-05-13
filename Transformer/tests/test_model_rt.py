@@ -1,7 +1,7 @@
 # tests/test_model_rt.py
 import torch
 import pytest
-from src.models.model import Basenji2Model, RTClassLoss
+from src.models.model import RepliformerModel, RTClassLoss
 from src.data.dataset import SpeciesConfig
 
 def _make_sp(name="rice"):
@@ -10,7 +10,7 @@ def _make_sp(name="rice"):
                          species_id=0)
 
 def test_model_output_shape():
-    model = Basenji2Model([_make_sp()])
+    model = RepliformerModel([_make_sp()])
     x = torch.zeros(2, 4, 196608)
     out = model(x, head="rice")
     assert "rt_logits" in out

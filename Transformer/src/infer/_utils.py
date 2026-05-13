@@ -3,14 +3,19 @@ import torch
 import yaml
 
 from ..data.data_utils import GenomeSequence, one_hot_encode, reverse_complement
-from ..models.model import Basenji2Model
+from ..models.model import RepliformerModel
+from ..models.config_model import RepliformerConfig
 
 
 def load_model(checkpoint: str, config: str, device: torch.device):
     with open(config) as f:
         cfg = yaml.safe_load(f)
     ckpt = torch.load(checkpoint, map_location=device)
-    model = Basenji2Model(bn_momentum=cfg["model"]["bn_momentum"])
+    species_configs = ckpt.get("species_configs")
+    model = RepliformerModel(
+        species_configs=species_configs,
+        model_cfg=RepliformerConfig(**cfg.get("model", {})),
+    )
     model.load_state_dict(ckpt["model"])
     return model.to(device).eval(), cfg
 
@@ -50,7 +55,7 @@ def fetch_one_hot(genome: GenomeSequence, chrom: str, start: int, end: int,
     return one_hot_encode(seq)  # [4, L]
 
 
-def rc_average(model: Basenji2Model, batch: torch.Tensor) -> torch.Tensor:
+def rc_average(model: RepliformerModel, batch: torch.Tensor) -> torch.Tensor:
     """Average forward and reverse-complement predictions. batch: [B, 4, L]."""
     with torch.no_grad():
         fwd = model(batch)["phase_pred"]                        # [B, T, 4]

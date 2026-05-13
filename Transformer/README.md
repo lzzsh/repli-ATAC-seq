@@ -1,6 +1,6 @@
-# Enformer-style Repli-seq RT Classifier
+# Repliformer — Repli-seq RT Classifier
 
-基于 DNA 序列的 Enformer 风格模型，对多物种基因组每个 128 bp bin 预测复制时序类别（ES / MS / LS / NR）。架构严格对齐 Enformer：one-hot 输入 → conv stem → conv tower（attention pooling）→ Transformer tower（TransformerXL 相对位置编码）→ 每物种独立分类头。
+基于 DNA 序列的 Enformer 风格模型，对多物种基因组每个 128 bp bin 预测复制时序类别（ES / MS / LS / NR）。架构严格对齐 Enformer：one-hot 输入 → conv stem → conv tower（attention pooling）→ Transformer tower（TransformerXL 相对位置编码）→ 每物种独立分类头。所有架构参数通过 `RepliformerConfig` 集中管理，可在配置文件中直接修改。
 
 ---
 
@@ -172,7 +172,7 @@ species:
 
 ### 4.2 训练配置
 
-`src/configs/transformer_wt.yaml` 包含所有超参数，关键字段：
+`src/configs/transformer_wt.yaml` 包含所有超参数。`model:` 节的每个字段都直接对应 `RepliformerConfig` 的参数，修改后重启训练即生效，无需改动代码。
 
 ```yaml
 data:
@@ -184,7 +184,25 @@ augmentation:
   shift_max: 1024                # 训练时随机平移最大 bp 数
 
 model:
+  # Conv trunk
+  stem_channels: 768
+  stem_kernel_size: 15
+  tower_filter_list: [768, 768, 896, 1024, 1152, 1280, 1536]
   bn_momentum: 0.1               # TF bn_momentum=0.9 → PyTorch 1-0.9=0.1
+  # Transformer tower
+  d_model: 1536
+  n_heads: 8
+  dim_key: 64
+  n_layers: 11
+  dropout: 0.4
+  attn_dropout: 0.05
+  pos_dropout: 0.01
+  # Final pointwise
+  pointwise_channels: 3072
+  final_dropout: 0.05
+  # Sequence geometry
+  crop_size: 320                 # 每侧裁剪的 bin 数（输出 896 bins）
+  n_output_bins: 4               # RT 类别数（ES / MS / LS / NR）
 
 loss:
   class_weights: [1.43, 1.43, 1.43, 1.0]  # ES, MS, LS, NR
@@ -192,14 +210,22 @@ loss:
 training:
   learning_rate: 0.0001
   warmup_steps: 2000
-  batch_size: 4
-  gradient_accumulation_steps: 8
+  batch_size: 1
+  gradient_accumulation_steps: 32
   gradient_clip_norm: 0.2
   mixed_precision: true
   early_stopping_patience: 10
-  max_epochs: 100
+  max_epochs: 200
   seed: 42
 ```
+
+**常用调参示例：**
+
+| 目标 | 修改字段 |
+|------|---------|
+| 缩小模型（减少显存） | `n_layers: 6`，`tower_filter_list: [512, 512, 640, 768, 896, 1024, 1024]`，`d_model: 1024` |
+| 减少 dropout（数据充足时） | `dropout: 0.2`，`attn_dropout: 0.0` |
+| 更宽的 FFN | `pointwise_channels: 4096` |
 
 ---
 
@@ -352,7 +378,8 @@ src/
     data_utils.py         # GenomeSequence, one_hot_encode, load_labels, load_labels_indexed
     dataset.py            # SpeciesConfig, load_manifest, RepliSeqDataset, SpeciesBalancedSampler
   models/
-    model.py              # Basenji2Model（ModuleDict heads）, RTClassLoss
+    model.py              # RepliformerModel（ModuleDict heads）, RTClassLoss
+    config_model.py       # RepliformerConfig（所有架构参数）
   configs/
     transformer_wt.yaml   # 训练超参数
   trainer.py              # DDP 训练循环，_forward_multi_species，TensorBoard
@@ -408,15 +435,26 @@ DNA sequence [196 kb]
 [B, 896, 4]  → ES / MS / LS / NR per 128 bp bin
 ```
 
-### 9.2 多物种设计
+### 9.2 RepliformerConfig
+
+所有架构超参数集中在 `src/models/config_model.py` 的 `RepliformerConfig` 中，继承自 `transformers.PretrainedConfig`。训练/评估时从 yaml 的 `model:` 节自动构建：
+
+```python
+model_cfg = RepliformerConfig(**cfg.get("model", {}))
+model = RepliformerModel(species_configs, model_cfg=model_cfg)
+```
+
+未在 yaml 中指定的字段使用 `RepliformerConfig` 的默认值（即 Enformer 原始配置）。
+
+### 9.3 多物种设计
 
 模型使用 `nn.ModuleDict` 管理每个物种的独立输出头：
 
 ```python
 self._heads = nn.ModuleDict({
-    "rice":        nn.Linear(3072, 4),
-    "maize":       nn.Linear(3072, 4),
-    "arabidopsis": nn.Linear(3072, 4),
+    "rice":        nn.Linear(cfg.pointwise_channels, cfg.n_output_bins),
+    "maize":       nn.Linear(cfg.pointwise_channels, cfg.n_output_bins),
+    "arabidopsis": nn.Linear(cfg.pointwise_channels, cfg.n_output_bins),
 })
 ```
 
@@ -425,7 +463,7 @@ self._heads = nn.ModuleDict({
 - **Forward 路由**：`model(one_hot, head="rice")` 指定使用哪个 head
 - **新增物种**：只需在 `manifest.yaml` 加条目，模型初始化时自动创建对应 head
 
-### 9.3 训练策略
+### 9.4 训练策略
 
 混合 batch 训练：每个 batch 包含所有物种的样本（`SpeciesBalancedSampler` 保证均衡），按 `species_id` 分组路由到对应 head，加权平均 loss：
 

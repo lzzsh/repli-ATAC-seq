@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint_sequential
 
 from ..data.dataset import SpeciesConfig
+from .config_model import RepliformerConfig
 
 
 # ── Positional feature functions (from Enformer) ──────────────────────────────
@@ -212,31 +213,26 @@ class _TransformerBlock(nn.Module):
 # ── Enformer trunk ────────────────────────────────────────────────────────────
 class _EnformerTrunk(nn.Module):
     """
-    Enformer conv trunk (exact channel schedule from DeepMind):
-      stem:   Conv1d(4→768, k=15) + Residual(ConvBlock(768)) + AttnPool/2
-      tower:  6× [ConvBlock(dim_in→dim_out, k=5) + Residual(ConvBlock(dim_out)) + AttnPool/2]
-              filters: 768→768→896→1024→1152→1280→1536
-
-    Input:  [B, 4, 196608]
-    Output: [B, 1536, 1536]
+    Enformer conv trunk.
+      stem:   Conv1d(4→stem_channels, k=stem_kernel_size) + Residual(ConvBlock) + AttnPool/2
+      tower:  len(tower_filter_list)-1 × [ConvBlock + Residual + AttnPool/2]
     """
 
-    # exponential_linspace_int(768, 1536, num=6, divisible_by=128) prepended with 768
-    _FILTER_LIST = [768, 768, 896, 1024, 1152, 1280, 1536]
-
-    def __init__(self, bn_momentum: float = 0.1):
+    def __init__(self, cfg: RepliformerConfig):
         super().__init__()
+        stem_ch = cfg.stem_channels
+        filters = cfg.tower_filter_list
+        bm = cfg.bn_momentum
 
-        # stem: plain Conv1d (no BN on raw input), then Residual(ConvBlock) + AttnPool
-        self.stem_conv = nn.Conv1d(4, 768, kernel_size=15, padding=7)
-        self.stem_res  = _ConvBlock(768, 768, kernel_size=1, bn_momentum=bn_momentum)
-        self.stem_pool = _AttnPool(768, pool_size=2)
+        self.stem_conv = nn.Conv1d(4, stem_ch, kernel_size=cfg.stem_kernel_size,
+                                   padding=cfg.stem_kernel_size // 2)
+        self.stem_res  = _ConvBlock(stem_ch, stem_ch, kernel_size=1, bn_momentum=bm)
+        self.stem_pool = _AttnPool(stem_ch, pool_size=2)
 
-        # conv tower
         tower_convs, tower_res, tower_pools = [], [], []
-        for dim_in, dim_out in zip(self._FILTER_LIST[:-1], self._FILTER_LIST[1:]):
-            tower_convs.append(_ConvBlock(dim_in, dim_out, kernel_size=5, bn_momentum=bn_momentum))
-            tower_res.append(_ConvBlock(dim_out, dim_out, kernel_size=1, bn_momentum=bn_momentum))
+        for dim_in, dim_out in zip(filters[:-1], filters[1:]):
+            tower_convs.append(_ConvBlock(dim_in, dim_out, kernel_size=5, bn_momentum=bm))
+            tower_res.append(_ConvBlock(dim_out, dim_out, kernel_size=1, bn_momentum=bm))
             tower_pools.append(_AttnPool(dim_out, pool_size=2))
         self.tower_convs = nn.ModuleList(tower_convs)
         self.tower_res   = nn.ModuleList(tower_res)
@@ -248,24 +244,18 @@ class _EnformerTrunk(nn.Module):
         for conv, res, pool in zip(self.tower_convs, self.tower_res, self.tower_pools):
             y = conv(x)
             x = pool(y + res(y))
-        return x                                    # [B, 1536, 1536]
+        return x
 
 
 # ── Transformer tower ─────────────────────────────────────────────────────────
 class _TransformerTower(nn.Module):
-    """
-    Enformer Transformer tower: n_layers× attention over full 1536 tokens.
-
-    Input:  [B, 1536, 1536]   (C, T)
-    Output: [B, 1536, 1536]   (T, C)
-    """
-    def __init__(self, d_model: int = 1536, n_heads: int = 8, dim_key: int = 64,
-                 n_layers: int = 11, dropout: float = 0.4,
-                 attn_dropout: float = 0.05, pos_dropout: float = 0.01):
+    """Enformer Transformer tower."""
+    def __init__(self, cfg: RepliformerConfig):
         super().__init__()
         self.layers = nn.ModuleList([
-            _TransformerBlock(d_model, n_heads, dim_key, dropout, attn_dropout, pos_dropout)
-            for _ in range(n_layers)
+            _TransformerBlock(cfg.d_model, cfg.n_heads, cfg.dim_key,
+                              cfg.dropout, cfg.attn_dropout, cfg.pos_dropout)
+            for _ in range(cfg.n_layers)
         ])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -278,38 +268,42 @@ class _TransformerTower(nn.Module):
 
 
 # ── EnformerModel ─────────────────────────────────────────────────────────────
-class Basenji2Model(nn.Module):
+class RepliformerModel(nn.Module):
     """
-    Full Enformer-aligned model:
-      trunk (conv)      → [B, 1536, 1536]
-      transformer       → [B, 1536, 1536]
-      crop 320          → [B, 896, 1536]
-      final_pointwise   BN→GELU→Conv1d(1536→3072)→Dropout(0.05)→GELU → [B, 896, 3072]
-      _heads[head: str] Linear(3072→4)                                 → [B, 896, 4]
+    Full Enformer-aligned model driven by RepliformerConfig.
+      trunk (conv)      → [B, d_model, T]
+      transformer       → [B, T, d_model]
+      crop cfg.crop_size → [B, n_output_bins, d_model]
+      final_pointwise   BN→GELU→Conv1d(d_model→pointwise_channels)→Dropout→GELU
+      _heads[head: str] Linear(pointwise_channels→n_output_bins)
     """
-    _CROP = 320
 
-    def __init__(self, species_configs: list[SpeciesConfig], bn_momentum: float = 0.1):
+    def __init__(self, species_configs: list[SpeciesConfig],
+                 model_cfg: RepliformerConfig | None = None):
         super().__init__()
         assert len(species_configs) > 0, "species_configs must not be empty"
-        self.trunk = _EnformerTrunk(bn_momentum=bn_momentum)
-        self.transformer = _TransformerTower()
-        self.final_bn   = nn.BatchNorm1d(1536, momentum=bn_momentum)
-        self.final_conv = nn.Conv1d(1536, 3072, kernel_size=1)
-        self.final_drop = nn.Dropout(0.05)
+        cfg = model_cfg if model_cfg is not None else RepliformerConfig()
+        self._cfg = cfg
+        self.trunk       = _EnformerTrunk(cfg)
+        self.transformer = _TransformerTower(cfg)
+        self.final_bn    = nn.BatchNorm1d(cfg.d_model, momentum=cfg.bn_momentum)
+        self.final_conv  = nn.Conv1d(cfg.d_model, cfg.pointwise_channels, kernel_size=1)
+        self.final_drop  = nn.Dropout(cfg.final_dropout)
         self._heads = nn.ModuleDict({
-            sp.name: nn.Linear(3072, 4) for sp in species_configs
+            sp.name: nn.Linear(cfg.pointwise_channels, cfg.n_output_bins)
+            for sp in species_configs
         })
 
     def forward(self, one_hot: torch.Tensor, head: str) -> dict:
-        x = self.trunk(one_hot)                             # [B, 1536, 1536]
-        x = self.transformer(x)                             # [B, 1536, 1536]
-        x = x[:, self._CROP:-self._CROP, :]                 # [B, 896, 1536]
-        x = x.permute(0, 2, 1)                              # [B, 1536, 896]
+        crop = self._cfg.crop_size
+        x = self.trunk(one_hot)
+        x = self.transformer(x)
+        x = x[:, crop:-crop, :]
+        x = x.permute(0, 2, 1)
         x = _enformer_gelu(self.final_bn(x))
-        x = _enformer_gelu(self.final_drop(self.final_conv(x)))  # [B, 3072, 896]
-        x = x.permute(0, 2, 1)                              # [B, 896, 3072]
-        return {"rt_logits": self._heads[head](x)}          # [B, 896, 4]
+        x = _enformer_gelu(self.final_drop(self.final_conv(x)))
+        x = x.permute(0, 2, 1)
+        return {"rt_logits": self._heads[head](x)}
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────

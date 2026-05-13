@@ -14,7 +14,8 @@ import yaml
 import logging
 
 from .data.dataset import RepliSeqDataset, load_manifest
-from .models.model import Basenji2Model, RTClassLoss
+from .models.model import RepliformerModel, RTClassLoss
+from .models.config_model import RepliformerConfig
 from .eval import evaluate_predictions
 
 logger = logging.getLogger(__name__)
@@ -123,9 +124,9 @@ def train(config_path: str, resume: str | None = None):
     train_loaders = _make_loaders(species_configs, "train", cfg, ddp, rank, world_size)
     val_loaders   = _make_loaders(species_configs, "val",   cfg, ddp, rank, world_size)
 
-    model = Basenji2Model(
+    model = RepliformerModel(
         species_configs=species_configs,
-        bn_momentum=cfg["model"]["bn_momentum"],
+        model_cfg=RepliformerConfig(**cfg.get("model", {})),
     ).to(device)
 
     if ddp:

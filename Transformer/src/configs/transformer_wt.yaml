@@ -10,7 +10,25 @@ augmentation:
   shift_max: 1024
 
 model:
-  bn_momentum: 0.1  # TF bn_momentum=0.9 → PyTorch momentum=1-0.9=0.1
+  # Conv trunk
+  stem_channels: 768
+  stem_kernel_size: 15
+  tower_filter_list: [768, 768, 896, 1024, 1152, 1280, 1536]
+  bn_momentum: 0.1        # TF bn_momentum=0.9 → PyTorch momentum=1-0.9=0.1
+  # Transformer tower
+  d_model: 1536
+  n_heads: 8
+  dim_key: 64
+  n_layers: 11
+  dropout: 0.4
+  attn_dropout: 0.05
+  pos_dropout: 0.01
+  # Final pointwise
+  pointwise_channels: 3072
+  final_dropout: 0.05
+  # Sequence geometry
+  crop_size: 320          # bins cropped from each side before prediction head
+  n_output_bins: 4        # RT classes (ES, MS, LS, NR)
 
 loss:
   lambda_phase: 1.0
