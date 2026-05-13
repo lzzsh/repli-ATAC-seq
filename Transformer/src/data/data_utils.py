@@ -134,11 +134,11 @@ def load_labels_indexed(df: pd.DataFrame):
         if chrom not in grouped:
             return out
         starts, ends, vals = grouped[chrom]
-        for i in range(n_bins):
-            center = genomic_start + i * model_bin_size + model_bin_size // 2
-            idx = np.searchsorted(starts, center, side="right") - 1
-            if 0 <= idx < len(starts) and starts[idx] <= center <= ends[idx]:
-                out[i] = vals[idx]
+        centers = genomic_start + np.arange(n_bins) * model_bin_size + model_bin_size // 2
+        idxs = np.searchsorted(starts, centers, side="right") - 1
+        valid = (idxs >= 0) & (idxs < len(starts))
+        valid[valid] &= (starts[idxs[valid]] <= centers[valid]) & (centers[valid] < ends[idxs[valid]])
+        out[valid] = vals[idxs[valid]]
         return out
 
     return query
