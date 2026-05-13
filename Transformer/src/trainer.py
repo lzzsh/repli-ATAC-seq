@@ -266,6 +266,20 @@ def train(config_path: str, resume: str | None = None):
                 f"train_loss={train_loss_total:.4f} val_loss={val_loss:.4f} "
                 f"val_macro_f1={val_f1:.4f}"
             )
+            sp_f1_parts = [
+                f"{k.split('/')[0]}={v:.3f}"
+                for k, v in metrics.items()
+                if k.endswith("/macro_f1")
+            ]
+            if sp_f1_parts:
+                logger.info("  per-species F1: " + " ".join(sp_f1_parts))
+            logger.info(
+                f"  per-class acc: "
+                f"ES={metrics.get('acc_ES', float('nan')):.3f} "
+                f"MS={metrics.get('acc_MS', float('nan')):.3f} "
+                f"LS={metrics.get('acc_LS', float('nan')):.3f} "
+                f"NR={metrics.get('acc_NR', float('nan')):.3f}"
+            )
             if val_f1 > best_score:
                 best_score = val_f1
                 patience = 0
