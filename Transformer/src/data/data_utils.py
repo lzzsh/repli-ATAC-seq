@@ -63,18 +63,6 @@ def get_window_coords(
     return chrom, ws, we
 
 
-# ── normalization & labels ────────────────────────────────────────────────────
-def tpm_normalize(counts: np.ndarray) -> np.ndarray:
-    total = counts.sum()
-    if total == 0:
-        return np.zeros_like(counts, dtype=np.float32)
-    return (counts / total * 1e6).astype(np.float32)
-
-
-def compute_wrt(es: np.ndarray, ms: np.ndarray, ls: np.ndarray, eps: float = 1e-6) -> np.ndarray:
-    return (0.5 * ms + ls) / (es + ms + ls + eps)
-
-
 def load_gff3_classes(
     gff3_path: str | Path,
 ) -> dict[tuple[str, int, int], str]:
