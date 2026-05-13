@@ -49,20 +49,6 @@ class GenomeSequence:
         return len(self.fasta[chrom])
 
 
-# ── bin / window utilities ────────────────────────────────────────────────────
-def get_window_coords(
-    chrom: str, bin_start: int, bin_end: int,
-    window_size: int = 32768, chrom_size: int | None = None,
-) -> tuple[str, int, int]:
-    """Center an 8 kb window on the bin; clamp to chromosome bounds."""
-    center = (bin_start + bin_end) // 2
-    half = window_size // 2
-    ws, we = center - half, center + half
-    if chrom_size is not None:
-        ws, we = max(0, ws), min(chrom_size, we)
-    return chrom, ws, we
-
-
 def load_gff3_classes(
     gff3_path: str | Path,
 ) -> dict[tuple[str, int, int], str]:

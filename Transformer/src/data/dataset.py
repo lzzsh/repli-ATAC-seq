@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from torch.utils.data import Dataset
 
-from .data_utils import GenomeSequence, get_window_coords, load_labels, load_labels_indexed, reverse_complement, RT_CLASS_MAP, one_hot_encode
+from .data_utils import GenomeSequence, load_labels, load_labels_indexed, reverse_complement, RT_CLASS_MAP, one_hot_encode
 
 
 # ── manifest ──────────────────────────────────────────────────────────────────
