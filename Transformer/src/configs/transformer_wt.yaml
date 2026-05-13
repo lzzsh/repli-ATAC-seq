@@ -32,7 +32,7 @@ model:
 
 loss:
   lambda_phase: 1.0
-  class_weights: [1.43, 1.43, 1.43, 1.0]  # ES, MS, LS, NR 等权重（强制平等对待四类）
+  # class_weights: [1.43, 1.43, 1.43, 1.0]  # ES, MS, LS, NR 等权重（强制平等对待四类）
 
 training:
   learning_rate: 0.0001
