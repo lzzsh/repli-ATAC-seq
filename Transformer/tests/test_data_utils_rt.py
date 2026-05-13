@@ -40,3 +40,29 @@ def test_center_coordinate_mapping(sample_df_1024):
     # model bin at genomic pos 0, center = 512, falls in label bin [0,1024) → ES=0
     result = query("chr1", 0, 1, 1024)
     assert result[0] == 0
+
+
+def test_mixed_bin_sizes():
+    """Last bin is truncated (smaller); its label must still be found."""
+    rows = [
+        {"chrom": "chr1", "start": 0,    "end": 1024, "RT_class": "ES"},
+        {"chrom": "chr1", "start": 1024, "end": 2048, "RT_class": "MS"},
+        {"chrom": "chr1", "start": 2048, "end": 2560, "RT_class": "LS"},  # truncated: 512 bp
+    ]
+    df = pd.DataFrame(rows)
+    query = load_labels_indexed(df)
+    result = query("chr1", 2048, 1, 1024)
+    assert result[0] == 2  # LS = 2
+
+
+def test_mixed_bin_sizes_center_outside_uniform_range():
+    """Truncated bin whose center does NOT align to the uniform grid."""
+    rows = [
+        {"chrom": "chr1", "start": 0,    "end": 1024, "RT_class": "ES"},
+        {"chrom": "chr1", "start": 1024, "end": 1300, "RT_class": "MS"},  # 276 bp
+    ]
+    df = pd.DataFrame(rows)
+    query = load_labels_indexed(df)
+    # model bin center = 1024 + 276//2 = 1162; should map to MS bin [1024, 1300)
+    result = query("chr1", 1024, 1, 276)
+    assert result[0] == 1  # MS = 1

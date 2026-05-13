@@ -119,26 +119,26 @@ def load_labels_indexed(df: pd.DataFrame):
     Returns query(chrom, genomic_start, n_bins, model_bin_size) -> np.ndarray [n_bins] int64
     Each model bin maps to the label bin containing its center coordinate.
     Bins with no annotation are set to IGNORE_LABEL (-1), not NR.
+    Handles variable-size label bins (e.g. truncated chromosome-end bins).
     """
     grouped = {}
     for chrom, grp in df.groupby("chrom"):
-        label_bin_size = int(grp["end"].iloc[0] - grp["start"].iloc[0])
-        keys = grp["start"].values.astype(int)
-        vals = grp["RT_class"].map(RT_CLASS_MAP).fillna(IGNORE_LABEL).values.astype(np.int64)
-        idx_map = dict(zip(keys, vals))
-        grouped[chrom] = (label_bin_size, idx_map)
+        starts = grp["start"].values.astype(int)
+        ends   = grp["end"].values.astype(int)
+        vals   = grp["RT_class"].map(RT_CLASS_MAP).fillna(IGNORE_LABEL).values.astype(np.int64)
+        order  = np.argsort(starts)
+        grouped[chrom] = (starts[order], ends[order], vals[order])
 
     def query(chrom: str, genomic_start: int, n_bins: int, model_bin_size: int) -> np.ndarray:
         out = np.full(n_bins, IGNORE_LABEL, dtype=np.int64)
         if chrom not in grouped:
             return out
-        label_bin_size, idx_map = grouped[chrom]
+        starts, ends, vals = grouped[chrom]
         for i in range(n_bins):
             center = genomic_start + i * model_bin_size + model_bin_size // 2
-            label_key = (center // label_bin_size) * label_bin_size
-            val = idx_map.get(label_key)
-            if val is not None:
-                out[i] = val
+            idx = np.searchsorted(starts, center, side="right") - 1
+            if 0 <= idx < len(starts) and starts[idx] <= center <= ends[idx]:
+                out[i] = vals[idx]
         return out
 
     return query
