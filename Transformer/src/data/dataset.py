@@ -94,7 +94,8 @@ class RepliSeqDataset(Dataset):
     def __getitem__(self, idx: int) -> dict:
         s = self.samples[idx]
         shift = random.randint(-self.shift_max, self.shift_max) if self.shift_max > 0 else 0
-        win_start = s["win_start"] + shift
+        chrom_size = self.genomes[s["species"]].chrom_size(s["chrom"])
+        win_start = max(0, min(s["win_start"] + shift, chrom_size - self.window_size))
         seq = self.genomes[s["species"]].fetch(
             s["chrom"], win_start, win_start + self.window_size, self.window_size
         )
