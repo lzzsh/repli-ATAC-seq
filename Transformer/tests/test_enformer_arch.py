@@ -1,16 +1,17 @@
 import torch
 import pytest
 from src.models.model import _EnformerTrunk
+from src.models.config_model import RepliformerConfig
 
 def test_enformer_trunk_output_shape():
-    trunk = _EnformerTrunk()
+    trunk = _EnformerTrunk(RepliformerConfig())
     x = torch.zeros(1, 4, 196608)
     out = trunk(x)
     # 196608/128=1536 tokens, bottleneck → 1536 channels; crop happens in RepliformerModel
     assert out.shape == (1, 1536, 1536)
 
 def test_enformer_trunk_channels():
-    trunk = _EnformerTrunk()
+    trunk = _EnformerTrunk(RepliformerConfig())
     x = torch.zeros(1, 4, 196608)
     out = trunk(x)
     assert out.shape[1] == 1536

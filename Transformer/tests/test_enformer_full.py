@@ -1,6 +1,7 @@
 import torch
 import pytest
 from src.models.model import _AttnPool
+from src.models.config_model import RepliformerConfig
 
 def test_attn_pool_output_shape():
     pool = _AttnPool(in_channels=64, pool_size=2)
@@ -24,14 +25,14 @@ def test_attn_pool_weights_sum_to_one():
 from src.models.model import _EnformerTrunk
 
 def test_enformer_trunk_output_shape():
-    trunk = _EnformerTrunk()
+    trunk = _EnformerTrunk(RepliformerConfig())
     x = torch.zeros(1, 4, 196608)
     out = trunk(x)
     # conv tower → bottleneck → [B, 1536, 1536]; crop happens after Transformer
     assert out.shape == (1, 1536, 1536)
 
 def test_enformer_trunk_no_dilated():
-    trunk = _EnformerTrunk()
+    trunk = _EnformerTrunk(RepliformerConfig())
     assert not hasattr(trunk, 'dilated_tower')
 
 from src.models.model import RepliformerModel, RTClassLoss
