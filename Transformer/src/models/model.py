@@ -286,6 +286,11 @@ class RepliformerModel(nn.Module):
         self._cfg = cfg
         self.trunk       = _EnformerTrunk(cfg)
         self.transformer = _TransformerTower(cfg)
+        trunk_out = cfg.tower_filter_list[-1]
+        self.trunk_proj = (
+            nn.Linear(trunk_out, cfg.d_model, bias=False)
+            if trunk_out != cfg.d_model else nn.Identity()
+        )
         self.final_bn    = nn.BatchNorm1d(cfg.d_model, momentum=cfg.bn_momentum)
         self.final_conv  = nn.Conv1d(cfg.d_model, cfg.pointwise_channels, kernel_size=1)
         self.final_drop  = nn.Dropout(cfg.final_dropout)
@@ -296,7 +301,8 @@ class RepliformerModel(nn.Module):
 
     def forward(self, one_hot: torch.Tensor, head: str) -> dict:
         crop = self._cfg.crop_size
-        x = self.trunk(one_hot)
+        x = self.trunk(one_hot)                  # [B, trunk_out, T]
+        x = self.trunk_proj(x.permute(0, 2, 1)).permute(0, 2, 1)  # [B, d_model, T]
         x = self.transformer(x)
         x = x[:, crop:-crop, :]
         x = x.permute(0, 2, 1)
