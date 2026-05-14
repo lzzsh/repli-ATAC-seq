@@ -112,44 +112,68 @@ def register_hooks(model: RepliformerModel) -> Tuple[Dict[str, List], List]:
     return activations, handles
 
 
+def _reshape_activation(name: str, act: torch.Tensor) -> torch.Tensor:
+    """
+    Conv layers  [B, C, L] → [B*L, C]  (feature axis = C)
+    Transformer  [B, T, D] → [B*T, D]  (feature axis = D)
+    Both cases: act.ndim==3, feature dim is dim-1 for transformer, dim-2 for conv.
+    We distinguish by name prefix.
+    """
+    if act.ndim == 2:
+        return act.float()
+    if act.ndim != 3:
+        return None
+    B, d1, d2 = act.shape
+    if name.startswith("transformer_") or name in ("trunk_proj",):
+        # [B, T, D] — feature axis is last (d2)
+        return act.reshape(-1, d2).float()
+    else:
+        # conv: [B, C, L] — feature axis is d1
+        return act.permute(0, 2, 1).reshape(-1, d1).float()
+
+
+def _svd_metrics(mat: torch.Tensor, top_k: int, centered: bool) -> dict:
+    if centered:
+        mat = mat - mat.mean(dim=0, keepdim=True)
+    try:
+        _, S, _ = torch.linalg.svd(mat, full_matrices=False)
+    except Exception:
+        return None
+    S = S.numpy()
+    S = S[S > 0]
+    p = S / S.sum()
+    effective_rank = float(np.exp(-np.sum(p * np.log(p + 1e-12))))
+    energy = S ** 2
+    rank_90 = int(np.searchsorted(np.cumsum(energy) / energy.sum(), 0.90) + 1)
+    return {"effective_rank": effective_rank, "rank_90pct": rank_90, "singular_values": S[:top_k]}
+
+
 def compute_svd_metrics(activations: Dict[str, List], top_k: int) -> List[dict]:
     results = []
     for name, tensor_list in activations.items():
         act = torch.cat(tensor_list, dim=0)
-
-        if act.ndim == 3:
-            # [B, C, L] or [B, T, D] → [B*dim2, dim1]
-            B, d1, d2 = act.shape
-            mat = act.permute(0, 2, 1).reshape(-1, d1).float()
-        elif act.ndim == 2:
-            mat = act.float()
-        else:
+        mat = _reshape_activation(name, act)
+        if mat is None:
             continue
 
-        try:
-            _, S, _ = torch.linalg.svd(mat, full_matrices=False)
-        except Exception as e:
-            print(f"  SVD failed for {name}: {e}")
+        raw = _svd_metrics(mat, top_k, centered=False)
+        cen = _svd_metrics(mat, top_k, centered=True)
+        if raw is None or cen is None:
+            print(f"  SVD failed for {name}")
             continue
-
-        S = S.numpy()
-        S = S[S > 0]
-
-        p = S / S.sum()
-        entropy = -np.sum(p * np.log(p + 1e-12))
-        effective_rank = float(np.exp(entropy))
-
-        energy = S ** 2
-        cumulative = np.cumsum(energy) / energy.sum()
-        rank_90 = int(np.searchsorted(cumulative, 0.90) + 1)
 
         results.append({
             "name": name,
             "dim": mat.shape[1],
             "n_rows": mat.shape[0],
-            "effective_rank": effective_rank,
-            "rank_90pct": rank_90,
-            "singular_values": S[:top_k],
+            # uncentered
+            "eff_rank":    raw["effective_rank"],
+            "rank_90":     raw["rank_90pct"],
+            "sv":          raw["singular_values"],
+            # centered (mean-subtracted per channel)
+            "eff_rank_c":  cen["effective_rank"],
+            "rank_90_c":   cen["rank_90pct"],
+            "sv_c":        cen["singular_values"],
         })
 
     return results
@@ -159,44 +183,57 @@ def plot_results(results: List[dict], out_dir: str, top_k: int):
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    names = [r["name"] for r in results]
-    eff_ranks = [r["effective_rank"] for r in results]
-    dims = [r["dim"] for r in results]
-    ranks_90 = [r["rank_90pct"] for r in results]
+    names       = [r["name"] for r in results]
+    dims        = [r["dim"]  for r in results]
+    eff_ranks   = [r["eff_rank"]   for r in results]
+    ranks_90    = [r["rank_90"]    for r in results]
+    eff_ranks_c = [r["eff_rank_c"] for r in results]
+    ranks_90_c  = [r["rank_90_c"]  for r in results]
     x = list(range(len(names)))
 
-    fig, ax = plt.subplots(figsize=(max(12, len(names) * 0.5), 5))
-    ax.plot(x, eff_ranks, marker="o", linewidth=1.5, label="Effective rank")
-    ax.plot(x, ranks_90,  marker="s", linewidth=1.5, linestyle="--", label="90% energy rank")
-    ax.plot(x, dims,      linewidth=1, linestyle=":", color="gray", label="Layer dim")
-    ax.set_xticks(x)
-    ax.set_xticklabels(names, rotation=90, fontsize=7)
-    ax.set_ylabel("Rank")
-    ax.set_title("Per-layer effective rank (activation SVD)")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    # ── Figure 1: effective rank — raw vs centered ────────────────────────────
+    fig, axes = plt.subplots(2, 1, figsize=(max(14, len(names) * 0.5), 9), sharex=True)
+    for ax, er, r90, title in [
+        (axes[0], eff_ranks,   ranks_90,   "Uncentered"),
+        (axes[1], eff_ranks_c, ranks_90_c, "Centered (mean-subtracted per channel)"),
+    ]:
+        ax.plot(x, er,   marker="o", linewidth=1.5, label="Effective rank")
+        ax.plot(x, r90,  marker="s", linewidth=1.5, linestyle="--", label="90% energy rank")
+        ax.plot(x, dims, linewidth=1, linestyle=":", color="gray", label="Layer dim")
+        ax.set_ylabel("Rank")
+        ax.set_title(title)
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(names, rotation=90, fontsize=7)
+    fig.suptitle("Per-layer effective rank (activation SVD)", y=1.01)
     fig.tight_layout()
-    fig.savefig(out_path / "effective_rank.png", dpi=150)
+    fig.savefig(out_path / "effective_rank.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {out_path / 'effective_rank.png'}")
 
+    # ── Figure 2: SV spectrum heatmap — raw vs centered ───────────────────────
     n_layers = len(results)
-    k = min(top_k, min(len(r["singular_values"]) for r in results))
-    matrix = np.zeros((n_layers, k))
-    for i, r in enumerate(results):
-        sv = r["singular_values"][:k]
-        sv_norm = sv / (sv[0] + 1e-12)
-        matrix[i, :len(sv_norm)] = sv_norm
+    k = min(top_k, min(len(r["sv"]) for r in results), min(len(r["sv_c"]) for r in results))
 
-    fig, ax = plt.subplots(figsize=(max(10, k * 0.15), max(6, n_layers * 0.3)))
-    im = ax.imshow(matrix, aspect="auto", cmap="viridis", origin="upper")
-    ax.set_yticks(range(n_layers))
-    ax.set_yticklabels(names, fontsize=7)
-    ax.set_xlabel("Singular value index")
-    ax.set_title("Normalized singular value spectra (row-normalized by σ₁)")
-    fig.colorbar(im, ax=ax, label="σᵢ / σ₁")
+    fig, axes = plt.subplots(1, 2, figsize=(max(16, k * 0.2), max(6, n_layers * 0.3)))
+    for ax, sv_key, title in [
+        (axes[0], "sv",   "Uncentered"),
+        (axes[1], "sv_c", "Centered"),
+    ]:
+        matrix = np.zeros((n_layers, k))
+        for i, r in enumerate(results):
+            sv = r[sv_key][:k]
+            sv_norm = sv / (sv[0] + 1e-12)
+            matrix[i, :len(sv_norm)] = sv_norm
+        im = ax.imshow(matrix, aspect="auto", cmap="viridis", origin="upper")
+        ax.set_yticks(range(n_layers))
+        ax.set_yticklabels(names, fontsize=7)
+        ax.set_xlabel("Singular value index")
+        ax.set_title(f"SV spectra — {title} (σᵢ/σ₁)")
+        fig.colorbar(im, ax=ax)
     fig.tight_layout()
-    fig.savefig(out_path / "sv_spectrum.png", dpi=150)
+    fig.savefig(out_path / "sv_spectrum.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {out_path / 'sv_spectrum.png'}")
 
@@ -228,11 +265,16 @@ if __name__ == "__main__":
     print("Computing SVD metrics ...")
     results = compute_svd_metrics(activations, args.top_k)
 
-    header = f"{'Layer':<35} {'Dim':>6} {'EffRank':>10} {'Rank90%':>9}"
+    header = (f"{'Layer':<35} {'Dim':>6}"
+              f"  {'EffRank':>9} {'R90%':>6}"
+              f"  {'EffRank(c)':>10} {'R90%(c)':>8}")
+    sep = "-" * len(header)
     print("\n" + header)
-    print("-" * len(header))
+    print(sep)
     for r in results:
-        print(f"{r['name']:<35} {r['dim']:>6} {r['effective_rank']:>10.1f} {r['rank_90pct']:>9d}")
+        print(f"{r['name']:<35} {r['dim']:>6}"
+              f"  {r['eff_rank']:>9.1f} {r['rank_90']:>6d}"
+              f"  {r['eff_rank_c']:>10.1f} {r['rank_90_c']:>8d}")
 
     plot_results(results, args.out_dir, args.top_k)
     print("\nDone.")
