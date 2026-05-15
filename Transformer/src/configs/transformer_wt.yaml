@@ -28,7 +28,7 @@ model:
   final_dropout: 0.1
   # Sequence geometry
   crop_size: 320          # bins cropped from each side before prediction head
-  n_output_bins: 4        # RT classes (ES, MS, LS, NR)# RT classes (ES, MS, LS, NR)
+  n_output_bins: 3        # RT classes (ES, MS, LS)
 
 
 loss:
