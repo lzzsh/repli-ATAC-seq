@@ -10,7 +10,7 @@ from .data.dataset import RepliSeqDataset, load_manifest
 from .models.model import RepliformerModel
 from .models.config_model import RepliformerConfig
 
-_CLASS_NAMES = ["ES", "MS", "LS", "NR"]
+_CLASS_NAMES = ["ES", "MS", "LS"]
 
 
 def evaluate_predictions(
@@ -37,7 +37,7 @@ def evaluate_predictions(
         m[f"acc_{name}"] = float((pred_cls[mask] == i).mean()) if mask.any() else float("nan")
     m["macro_f1"] = float(f1_score(rt_true, pred_cls, average="macro", zero_division=0))
     m["overall_acc"] = float((pred_cls == rt_true).mean())
-    cm = confusion_matrix(rt_true, pred_cls, labels=list(range(4)))
+    cm = confusion_matrix(rt_true, pred_cls, labels=list(range(3)))
     for i, name in enumerate(_CLASS_NAMES):
         m[f"cm_row_{name}"] = cm[i].tolist()
     return m
