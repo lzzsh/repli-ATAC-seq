@@ -18,8 +18,8 @@ def evaluate_predictions(
     rt_true: np.ndarray,
 ) -> dict:
     """
-    rt_pred_logits: [N, 896, 4] or [N, 4]
-    rt_true:        [N, 896] or [N] int64  (bins with label -1 are excluded)
+    rt_pred_logits: [N, T, 3] or [N, 3]
+    rt_true:        [N, T] or [N] int64  (bins with label -1 are excluded)
     """
     if rt_pred_logits.ndim == 3:
         N, T, C = rt_pred_logits.shape
