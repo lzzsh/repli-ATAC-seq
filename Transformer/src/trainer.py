@@ -279,8 +279,7 @@ def train(config_path: str, resume: str | None = None):
                 f"  per-class acc: "
                 f"ES={metrics.get('acc_ES', float('nan')):.3f} "
                 f"MS={metrics.get('acc_MS', float('nan')):.3f} "
-                f"LS={metrics.get('acc_LS', float('nan')):.3f} "
-                f"NR={metrics.get('acc_NR', float('nan')):.3f}"
+                f"LS={metrics.get('acc_LS', float('nan')):.3f}"
             )
             if val_f1 > best_score:
                 best_score = val_f1
