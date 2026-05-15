@@ -4,10 +4,9 @@ from pathlib import Path
 from pyfaidx import Fasta
 
 # ── constants ────────────────────────────────────────────────────────────────
-RT_CLASS_MAP = {"ES": 0, "MS": 1, "LS": 2}
-VALID_GFF3_CLASSES = {"ES", "MS", "LS", "NR"}
-# IGV display names → internal class names
-_GFF3_NAME_MAP = {"Non-replication": "NR", "unknown": "NR"}
+SIGNAL_CHANNELS = ["G1", "ES", "MS", "LS"]
+N_SIGNALS = len(SIGNAL_CHANNELS)
+
 _COMPLEMENT = str.maketrans("ACGTacgtNn", "TGCAtgcaNn")
 _BASE_IDX = {"A": 0, "C": 1, "G": 2, "T": 3}
 
@@ -20,7 +19,7 @@ def reverse_complement(seq: str) -> str:
 def one_hot_encode(seq: str) -> np.ndarray:
     """Encode DNA string to one-hot array of shape [4, L].
 
-    Channels: A=0, C=1, G=2, T=3. Non-ACGT bases (N, IUPAC) → all zeros.
+    Channels: A=0, C=1, G=2, T=3. Non-ACGT bases → all zeros.
     """
     L = len(seq)
     out = np.zeros((4, L), dtype=np.float32)
@@ -49,62 +48,38 @@ class GenomeSequence:
         return len(self.fasta[chrom])
 
 
-def load_gff3_classes(
-    gff3_path: str | Path,
-) -> dict[tuple[str, int, int], str]:
-    """Parse GFF3, return (chrom, start, end) → RT class name for all valid classes."""
-    classes: dict[tuple[str, int, int], str] = {}
-    with open(gff3_path) as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 9:
-                continue
-            chrom, start, end = parts[0], int(float(parts[3])) - 1, int(float(parts[4]))
-            name = ""
-            for attr in parts[8].split(";"):
-                if attr.startswith("Name="):
-                    name = attr[5:].strip()
-                    break
-            name = _GFF3_NAME_MAP.get(name, name)
-            if name in VALID_GFF3_CLASSES:
-                classes[(chrom, start, end)] = name
-    return classes
-
-def load_labels(gff3_path: str | Path, species: str) -> pd.DataFrame:
+# ── signal label loading ──────────────────────────────────────────────────────
+def load_signals(tsv_path: str | Path, species: str) -> pd.DataFrame:
     """
-    Parse GFF3 replication phase annotations into a DataFrame with columns:
-    chrom, start, end, RT_class, species.
+    Parse TSV replication signal file.
+    Required columns: chrom, start, end, G1, ES, MS, LS (CPM values).
     """
-    gff3_classes = load_gff3_classes(gff3_path)
-    rows = [
-        {"chrom": chrom, "start": start, "end": end, "RT_class": cls, "species": species}
-        for (chrom, start, end), cls in gff3_classes.items()
-    ]
-    return pd.DataFrame(rows).reset_index(drop=True)
+    df = pd.read_csv(tsv_path, sep="\t")
+    required = {"chrom", "start", "end"} | set(SIGNAL_CHANNELS)
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"TSV missing columns: {missing}")
+    df = df[["chrom", "start", "end"] + SIGNAL_CHANNELS].copy()
+    df["species"] = species
+    return df.reset_index(drop=True)
 
 
-IGNORE_LABEL = -1   # bins with no GFF3 annotation; excluded from loss and metrics
-
-
-def load_labels_indexed(df: pd.DataFrame):
+def load_signals_indexed(df: pd.DataFrame):
     """
-    Returns query(chrom, genomic_start, n_bins, model_bin_size) -> np.ndarray [n_bins] int64
-    Each model bin maps to the label bin containing its center coordinate.
-    Bins with no annotation are set to IGNORE_LABEL (-1), not NR.
-    Handles variable-size label bins (e.g. truncated chromosome-end bins).
+    Returns query(chrom, genomic_start, n_bins, model_bin_size) -> float32 [n_bins, 4]
+    Each model bin maps to the signal bin containing its center coordinate.
+    Unannotated bins are NaN (excluded from loss via mask).
     """
     grouped = {}
     for chrom, grp in df.groupby("chrom"):
         starts = grp["start"].values.astype(int)
         ends   = grp["end"].values.astype(int)
-        vals   = grp["RT_class"].map(RT_CLASS_MAP).fillna(IGNORE_LABEL).values.astype(np.int64)
+        vals   = grp[SIGNAL_CHANNELS].values.astype(np.float32)
         order  = np.argsort(starts)
         grouped[chrom] = (starts[order], ends[order], vals[order])
 
     def query(chrom: str, genomic_start: int, n_bins: int, model_bin_size: int) -> np.ndarray:
-        out = np.full(n_bins, IGNORE_LABEL, dtype=np.int64)
+        out = np.full((n_bins, N_SIGNALS), np.nan, dtype=np.float32)
         if chrom not in grouped:
             return out
         starts, ends, vals = grouped[chrom]

@@ -1,91 +1,65 @@
-# tests/test_data_utils_rt.py
 import numpy as np
 import pandas as pd
 import pytest
-from src.data.data_utils import load_labels_indexed
+from src.data.data_utils import load_signals_indexed, SIGNAL_CHANNELS, N_SIGNALS
+
 
 @pytest.fixture
-def sample_df_1024():
+def sample_df():
     rows = []
-    classes = ["ES", "MS", "LS", "NR"]
     for i in range(50):
         rows.append({
             "chrom": "chr1",
             "start": i * 1024,
             "end": (i + 1) * 1024,
-            "RT_class": classes[i % 4],
+            "G1": float(i),
+            "ES": float(i * 2),
+            "MS": float(i * 3),
+            "LS": float(i * 4),
         })
     return pd.DataFrame(rows)
 
-def test_returns_int64(sample_df_1024):
-    query = load_labels_indexed(sample_df_1024)
+
+def test_returns_float32(sample_df):
+    query = load_signals_indexed(sample_df)
     result = query("chr1", 0, 28, 1024)
-    assert result.dtype == np.int64
-    assert result.shape == (28,)
+    assert result.dtype == np.float32
+    assert result.shape == (28, 4)
 
-def test_class_values(sample_df_1024):
-    query = load_labels_indexed(sample_df_1024)
-    result = query("chr1", 0, 4, 1024)
-    # bins 0..3 → ES=0, MS=1, LS=2, NR=-1 (ignore)
-    np.testing.assert_array_equal(result, [0, 1, 2, -1])
 
-def test_missing_bin_is_ignore(sample_df_1024):
-    query = load_labels_indexed(sample_df_1024)
-    result = query("chr1", 9999 * 1024, 4, 1024)
-    np.testing.assert_array_equal(result, [-1, -1, -1, -1])  # IGNORE_LABEL=-1
-
-def test_center_coordinate_mapping(sample_df_1024):
-    """Model bin center falls in label bin → correct class."""
-    query = load_labels_indexed(sample_df_1024)
-    # model bin at genomic pos 0, center = 512, falls in label bin [0,1024) → ES=0
+def test_signal_values(sample_df):
+    query = load_signals_indexed(sample_df)
     result = query("chr1", 0, 1, 1024)
-    assert result[0] == 0
+    np.testing.assert_array_almost_equal(result[0], [0.0, 0.0, 0.0, 0.0])
+    result2 = query("chr1", 1024, 1, 1024)
+    # bin 1: G1=1, ES=2, MS=3, LS=4
+    np.testing.assert_array_almost_equal(result2[0], [1.0, 2.0, 3.0, 4.0])
+
+
+def test_missing_bin_is_nan(sample_df):
+    query = load_signals_indexed(sample_df)
+    result = query("chr1", 9999 * 1024, 4, 1024)
+    assert np.all(np.isnan(result))
+
+
+def test_center_coordinate_mapping(sample_df):
+    query = load_signals_indexed(sample_df)
+    result = query("chr1", 0, 1, 1024)
+    assert not np.any(np.isnan(result))
 
 
 def test_mixed_bin_sizes():
-    """Last bin is truncated (smaller); its label must still be found."""
     rows = [
-        {"chrom": "chr1", "start": 0,    "end": 1024, "RT_class": "ES"},
-        {"chrom": "chr1", "start": 1024, "end": 2048, "RT_class": "MS"},
-        {"chrom": "chr1", "start": 2048, "end": 2560, "RT_class": "LS"},  # truncated: 512 bp
+        {"chrom": "chr1", "start": 0,    "end": 1024, "G1": 1.0, "ES": 2.0, "MS": 3.0, "LS": 4.0},
+        {"chrom": "chr1", "start": 1024, "end": 2048, "G1": 5.0, "ES": 6.0, "MS": 7.0, "LS": 8.0},
+        {"chrom": "chr1", "start": 2048, "end": 2560, "G1": 9.0, "ES": 10.0, "MS": 11.0, "LS": 12.0},
     ]
     df = pd.DataFrame(rows)
-    query = load_labels_indexed(df)
-    # model_bin_size=512 → center = 2048 + 256 = 2304, strictly inside [2048, 2560)
+    query = load_signals_indexed(df)
     result = query("chr1", 2048, 1, 512)
-    assert result[0] == 2  # LS = 2
+    np.testing.assert_array_almost_equal(result[0], [9.0, 10.0, 11.0, 12.0])
 
 
-def test_mixed_bin_sizes_center_outside_uniform_range():
-    """Truncated bin whose center does NOT align to the uniform grid."""
-    rows = [
-        {"chrom": "chr1", "start": 0,    "end": 1024, "RT_class": "ES"},
-        {"chrom": "chr1", "start": 1024, "end": 1300, "RT_class": "MS"},  # 276 bp
-    ]
-    df = pd.DataFrame(rows)
-    query = load_labels_indexed(df)
-    # model bin center = 1024 + 276//2 = 1162; should map to MS bin [1024, 1300)
-    result = query("chr1", 1024, 1, 276)
-    assert result[0] == 1  # MS = 1
-
-
-def test_truncated_bin_center_strictly_inside():
-    """Center of model bin falls strictly inside a truncated label bin.
-
-    Old approach: key = (center // label_bin_size) * label_bin_size
-    With label_bin_size=1024 (from first bin), center=2200:
-      key = (2200 // 1024) * 1024 = 2048 → found in idx_map → would return LS
-    But this only works by coincidence. The real failure case is when the
-    truncated bin's start does NOT align to the uniform grid.
-    """
-    rows = [
-        {"chrom": "chr1", "start": 0,    "end": 1024, "RT_class": "ES"},
-        {"chrom": "chr1", "start": 1024, "end": 2048, "RT_class": "MS"},
-        {"chrom": "chr1", "start": 2048, "end": 2700, "RT_class": "LS"},  # 652 bp truncated
-    ]
-    df = pd.DataFrame(rows)
-    query = load_labels_indexed(df)
-    # model bin: genomic_start=2048, model_bin_size=652 → center = 2048 + 326 = 2374
-    # center 2374 is strictly inside [2048, 2700) → should return LS=2
-    result = query("chr1", 2048, 1, 652)
-    assert result[0] == 2  # LS = 2
+def test_signal_channels_constant():
+    assert SIGNAL_CHANNELS == ["G1", "ES", "MS", "LS"]
+    assert N_SIGNALS == 4
