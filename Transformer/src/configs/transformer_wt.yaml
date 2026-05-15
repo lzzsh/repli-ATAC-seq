@@ -33,7 +33,7 @@ model:
 
 loss:
   lambda_phase: 1.0
-  # 类别权重：ES, MS, LS, NR（按训练集频率倒数设置，先用均匀权重）
+  # 类别权重：ES, MS, LS（按训练集频率倒数设置，先用均匀权重）
   # class_weights: [1.43, 1.43, 1.43, 1.0]
 
 training:

@@ -24,3 +24,10 @@ def test_rt_class_loss():
     assert "total" in losses
     assert losses["total"].shape == ()
     assert losses["total"].item() > 0
+
+def test_rt_class_loss_with_weights():
+    criterion = RTClassLoss(class_weights=[1.0, 1.0, 1.0])  # 3 classes
+    logits = torch.randn(2, 896, 3)
+    labels = torch.randint(0, 3, (2, 896))
+    losses = criterion({"rt_logits": logits}, {"rt_labels": labels})
+    assert losses["total"].shape == ()
