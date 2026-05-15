@@ -223,6 +223,7 @@ class _EnformerTrunk(nn.Module):
         stem_ch = cfg.stem_channels
         filters = cfg.tower_filter_list
         bm = cfg.bn_momentum
+        n_tower = len(filters) - 1
 
         self.stem_conv = nn.Conv1d(4, stem_ch, kernel_size=cfg.stem_kernel_size,
                                    padding=cfg.stem_kernel_size // 2)
@@ -230,10 +231,14 @@ class _EnformerTrunk(nn.Module):
         self.stem_pool = _AttnPool(stem_ch, pool_size=2)
 
         tower_convs, tower_res, tower_pools = [], [], []
-        for dim_in, dim_out in zip(filters[:-1], filters[1:]):
+        for i, (dim_in, dim_out) in enumerate(zip(filters[:-1], filters[1:])):
             tower_convs.append(_ConvBlock(dim_in, dim_out, kernel_size=5, bn_momentum=bm))
             tower_res.append(_ConvBlock(dim_out, dim_out, kernel_size=1, bn_momentum=bm))
-            tower_pools.append(_AttnPool(dim_out, pool_size=2))
+            use_avg = (cfg.pool_type == "avg_late" and i >= n_tower - 3)
+            tower_pools.append(
+                nn.AvgPool1d(kernel_size=2, stride=2) if use_avg
+                else _AttnPool(dim_out, pool_size=2)
+            )
         self.tower_convs = nn.ModuleList(tower_convs)
         self.tower_res   = nn.ModuleList(tower_res)
         self.tower_pools = nn.ModuleList(tower_pools)
@@ -324,6 +329,6 @@ class RTClassLoss(nn.Module):
     def forward(self, outputs: dict, batch: dict) -> dict:
         logits = outputs["rt_logits"]
         labels = batch["rt_labels"]
-        loss = F.cross_entropy(logits.reshape(-1, 4), labels.reshape(-1),
+        loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), labels.reshape(-1),
                                weight=self.weight, ignore_index=-1)
         return {"total": loss, "rt": loss}

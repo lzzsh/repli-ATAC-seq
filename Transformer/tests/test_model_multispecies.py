@@ -19,7 +19,7 @@ def test_forward_returns_correct_shape():
     model = RepliformerModel(_make_configs(["rice"]))
     x = torch.zeros(2, 4, 196608)
     out = model(x, head="rice")
-    assert out["rt_logits"].shape == (2, 896, 4)
+    assert out["rt_logits"].shape == (2, 896, 3)
 
 def test_forward_unknown_head_raises():
     model = RepliformerModel(_make_configs(["rice"]))

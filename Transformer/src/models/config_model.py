@@ -11,6 +11,8 @@ class RepliformerConfig(PretrainedConfig):
         stem_kernel_size: int = 15,
         tower_filter_list: list = None,   # None → default Enformer schedule
         bn_momentum: float = 0.1,
+        # ── Pooling ───────────────────────────────────────────────────────────
+        pool_type: str = "attn",        # "attn" | "avg_late" (avg for last 3 tower pools)
         # ── Transformer tower ─────────────────────────────────────────────────
         d_model: int = 1536,
         n_heads: int = 8,
@@ -24,7 +26,7 @@ class RepliformerConfig(PretrainedConfig):
         final_dropout: float = 0.05,
         # ── Sequence / output geometry ────────────────────────────────────────
         crop_size: int = 320,           # bins cropped from each side before head
-        n_output_bins: int = 4,         # RT classes per bin
+        n_output_bins: int = 3,         # RT classes per bin (ES, MS, LS)
         **kwargs,
     ):
         # default Enformer conv-tower filter schedule
@@ -34,6 +36,7 @@ class RepliformerConfig(PretrainedConfig):
         self.stem_channels = stem_channels
         self.stem_kernel_size = stem_kernel_size
         self.tower_filter_list = tower_filter_list
+        self.pool_type = pool_type
         self.bn_momentum = bn_momentum
 
         self.d_model = d_model

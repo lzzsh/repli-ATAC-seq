@@ -44,13 +44,13 @@ def test_model_output_shape_transformer_head():
     model = RepliformerModel([_make_sp()])
     x = torch.zeros(1, 4, 196608)
     out = model(x, head="rice")
-    assert out["rt_logits"].shape == (1, 896, 4)
+    assert out["rt_logits"].shape == (1, 896, 3)
 
 def test_model_loss_finite():
     model = RepliformerModel([_make_sp()])
     criterion = RTClassLoss()
     x = torch.zeros(1, 4, 196608)
-    labels = torch.randint(0, 4, (1, 896))
+    labels = torch.randint(0, 3, (1, 896))
     out = model(x, head="rice")
     loss = criterion(out, {"rt_labels": labels})
     assert torch.isfinite(loss["total"])

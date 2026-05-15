@@ -69,13 +69,14 @@ def _validate(model, val_loaders: dict, criterion, device) -> dict:
             valid = sp_lab.reshape(-1) != -1
             if valid.any():
                 per_species[sp_name] = evaluate_predictions(
-                    sp_log.reshape(-1, 4)[valid], sp_lab.reshape(-1)[valid]
+                    sp_log.reshape(-1, sp_log.shape[-1])[valid], sp_lab.reshape(-1)[valid]
                 )
             all_logits.append(sp_log)
             all_labels.append(sp_lab)
 
     # aggregate across species (ignore bins excluded)
-    flat_log = np.concatenate(all_logits).reshape(-1, 4)
+    flat_log = np.concatenate(all_logits)
+    flat_log = flat_log.reshape(-1, flat_log.shape[-1])
     flat_lab = np.concatenate(all_labels).reshape(-1)
     valid = flat_lab != -1
     metrics = evaluate_predictions(flat_log[valid], flat_lab[valid]) if valid.any() else {}
@@ -130,15 +131,17 @@ def train(config_path: str, resume: str | None = None):
     ).to(device)
 
     if ddp:
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
 
     class_weights = cfg.get("loss", {}).get("class_weights", None)
     criterion = RTClassLoss(class_weights=class_weights).to(device)
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=cfg["training"]["learning_rate"],
         betas=(0.9, 0.999),
+        weight_decay=cfg["training"].get("weight_decay", 0.01),
     )
     scaler = GradScaler(enabled=cfg["training"]["mixed_precision"])
 
@@ -277,8 +280,7 @@ def train(config_path: str, resume: str | None = None):
                 f"  per-class acc: "
                 f"ES={metrics.get('acc_ES', float('nan')):.3f} "
                 f"MS={metrics.get('acc_MS', float('nan')):.3f} "
-                f"LS={metrics.get('acc_LS', float('nan')):.3f} "
-                f"NR={metrics.get('acc_NR', float('nan')):.3f}"
+                f"LS={metrics.get('acc_LS', float('nan')):.3f}"
             )
             if val_f1 > best_score:
                 best_score = val_f1

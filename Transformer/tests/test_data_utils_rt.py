@@ -26,8 +26,8 @@ def test_returns_int64(sample_df_1024):
 def test_class_values(sample_df_1024):
     query = load_labels_indexed(sample_df_1024)
     result = query("chr1", 0, 4, 1024)
-    # bins 0..3 → ES=0, MS=1, LS=2, NR=3
-    np.testing.assert_array_equal(result, [0, 1, 2, 3])
+    # bins 0..3 → ES=0, MS=1, LS=2, NR=-1 (ignore)
+    np.testing.assert_array_equal(result, [0, 1, 2, -1])
 
 def test_missing_bin_is_ignore(sample_df_1024):
     query = load_labels_indexed(sample_df_1024)
