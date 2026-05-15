@@ -3,50 +3,45 @@ import numpy as np
 import pandas as pd
 import yaml
 from pathlib import Path
+from scipy.stats import pearsonr
 from torch.utils.data import DataLoader
-from sklearn.metrics import f1_score, confusion_matrix
 
 from .data.dataset import RepliSeqDataset, load_manifest
 from .models.model import RepliformerModel
 from .models.config_model import RepliformerConfig
 
-_CLASS_NAMES = ["ES", "MS", "LS"]
+_SIGNAL_CHANNELS = ["G1", "ES", "MS", "LS"]
 
 
 def evaluate_predictions(
-    rt_pred_logits: np.ndarray,
-    rt_true: np.ndarray,
+    pred_signals: np.ndarray,
+    true_signals: np.ndarray,
 ) -> dict:
     """
-    rt_pred_logits: [N, T, 3] or [N, 3]
-    rt_true:        [N, T] or [N] int64  (bins with label -1 are excluded)
+    pred_signals: [N, 4] float32
+    true_signals: [N, 4] float32  (caller has already excluded NaN bins)
     """
-    if rt_pred_logits.ndim == 3:
-        N, T, C = rt_pred_logits.shape
-        rt_pred_logits = rt_pred_logits.reshape(N * T, C)
-        rt_true = rt_true.reshape(N * T)
-
-    valid = rt_true != -1
-    rt_pred_logits = rt_pred_logits[valid]
-    rt_true = rt_true[valid]
-
-    pred_cls = rt_pred_logits.argmax(axis=1)
     m = {}
-    for i, name in enumerate(_CLASS_NAMES):
-        mask = rt_true == i
-        m[f"acc_{name}"] = float((pred_cls[mask] == i).mean()) if mask.any() else float("nan")
-    m["macro_f1"] = float(f1_score(rt_true, pred_cls, average="macro", zero_division=0))
-    m["overall_acc"] = float((pred_cls == rt_true).mean())
-    cm = confusion_matrix(rt_true, pred_cls, labels=list(range(3)))
-    for i, name in enumerate(_CLASS_NAMES):
-        m[f"cm_row_{name}"] = cm[i].tolist()
+    pearsons = []
+    for i, ch in enumerate(_SIGNAL_CHANNELS):
+        p = pred_signals[:, i]
+        t = true_signals[:, i]
+        if len(p) > 1 and np.std(t) > 0:
+            r, _ = pearsonr(p, t)
+        else:
+            r = float("nan")
+        m[f"pearson_{ch}"] = float(r)
+        pearsons.append(r)
+    valid_r = [r for r in pearsons if not np.isnan(r)]
+    m["mean_pearson"] = float(np.mean(valid_r)) if valid_r else float("nan")
+    m["mse"] = float(np.mean((pred_signals - true_signals) ** 2))
+    m["mae"] = float(np.mean(np.abs(pred_signals - true_signals)))
     return m
 
 
 def _load_model(cfg: dict, checkpoint_path: str, device,
                 species_configs: list) -> RepliformerModel:
-    assert species_configs is not None and len(species_configs) > 0, \
-        "species_configs must be provided to _load_model"
+    assert species_configs is not None and len(species_configs) > 0
     ckpt = torch.load(checkpoint_path, map_location=device)
     model = RepliformerModel(
         species_configs=species_configs,
@@ -60,11 +55,11 @@ def _run_inference(model, loader, device, head: str):
     pp, pt = [], []
     with torch.no_grad():
         for batch in loader:
-            one_hot   = batch["one_hot"].to(device)
-            rt_labels = batch["rt_labels"].to(device)
+            one_hot    = batch["one_hot"].to(device)
+            rt_signals = batch["rt_signals"].to(device)
             out = model(one_hot, head=head)
-            pp.append(out["rt_logits"].cpu().numpy())
-            pt.append(rt_labels.cpu().numpy())
+            pp.append(out["rt_signals"].cpu().numpy())
+            pt.append(rt_signals.cpu().numpy())
     return np.concatenate(pp), np.concatenate(pt)
 
 
@@ -83,7 +78,11 @@ def eval_wt(config_path: str, checkpoint_path: str, output_dir: str):
                              window_size=cfg["data"]["input_window_length"], rc_prob=0.0)
         loader = DataLoader(ds, batch_size=cfg["training"]["batch_size"],
                             shuffle=False, num_workers=4)
-        m = evaluate_predictions(*_run_inference(model, loader, device, head=sp.name))
+        pred, true = _run_inference(model, loader, device, head=sp.name)
+        pred_flat = pred.reshape(-1, 4)
+        true_flat = true.reshape(-1, 4)
+        valid = ~np.isnan(true_flat).any(axis=1)
+        m = evaluate_predictions(pred_flat[valid], true_flat[valid])
         m["species"] = sp.name
         rows.append(m)
     df = pd.DataFrame(rows)
@@ -92,7 +91,6 @@ def eval_wt(config_path: str, checkpoint_path: str, output_dir: str):
 
 
 def eval_cross_species(config_path: str, checkpoint_path: str, output_dir: str):
-    """Evaluate all (src_head × tgt_species) combinations → N×N matrix TSV."""
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -112,9 +110,11 @@ def eval_cross_species(config_path: str, checkpoint_path: str, output_dir: str):
     rows = []
     for src_sp in species_configs:
         for tgt_sp in species_configs:
-            m = evaluate_predictions(
-                *_run_inference(model, loaders[tgt_sp.name], device, head=src_sp.name)
-            )
+            pred, true = _run_inference(model, loaders[tgt_sp.name], device, head=src_sp.name)
+            pred_flat = pred.reshape(-1, 4)
+            true_flat = true.reshape(-1, 4)
+            valid = ~np.isnan(true_flat).any(axis=1)
+            m = evaluate_predictions(pred_flat[valid], true_flat[valid])
             m["src_head"]    = src_sp.name
             m["tgt_species"] = tgt_sp.name
             rows.append(m)
