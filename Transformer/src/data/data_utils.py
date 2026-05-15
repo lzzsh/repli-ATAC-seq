@@ -4,7 +4,7 @@ from pathlib import Path
 from pyfaidx import Fasta
 
 # ── constants ────────────────────────────────────────────────────────────────
-RT_CLASS_MAP = {"ES": 0, "MS": 1, "LS": 2, "NR": 3}
+RT_CLASS_MAP = {"ES": 0, "MS": 1, "LS": 2}
 VALID_GFF3_CLASSES = {"ES", "MS", "LS", "NR"}
 # IGV display names → internal class names
 _GFF3_NAME_MAP = {"Non-replication": "NR", "unknown": "NR"}
