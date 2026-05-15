@@ -2,23 +2,23 @@ species:
   - name: rice
     species_id: 0
     fasta: /liaozizhuo/repli-ATAC-seq/data/genomes/rice_all_genomes_v7.fasta
-    gff3: /liaozizhuo/repli-ATAC-seq/data/labels/rice_wt_rt_1024bp.gff3
-    train_chroms: [chr01, chr02, chr03, chr05, chr06, chr07, chr09, chr10]
-    val_chroms: [chr04, chr08]
+    gff3: /liaozizhuo/repli-ATAC-seq/data/labels/rice_wt_rt_128.gff3
+    train_chroms: [chr01, chr03, chr04, chr05, chr06, chr07, chr08, chr09]
+    val_chroms: [chr02, chr10]
     test_chroms: [chr11, chr12]
 
-  - name: maize
-    species_id: 1
-    fasta: /liaozizhuo/repli-ATAC-seq/data/genomes/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.dna.toplevel.fa
-    gff3: /liaozizhuo/repli-ATAC-seq/data/labels/maize_rt_1024bp.gff3
-    train_chroms: ["1", "2", "3", "4", "6", "7", "8"]
-    val_chroms: ["5", "9"]
-    test_chroms: ["10"]
+  # - name: maize
+  #   species_id: 1
+  #   fasta: /liaozizhuo/repli-ATAC-seq/data/genomes/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.dna.toplevel.fa
+  #   gff3: /liaozizhuo/repli-ATAC-seq/data/labels/zeamay_128.gff3
+  #   train_chroms: ["1", "4", "5", "6", "7", "8", "9"]
+  #   val_chroms: ["2", "3"]
+  #   test_chroms: ["10"]
 
-  - name: arabidopsis
-    species_id: 2
-    fasta: /liaozizhuo/repli-ATAC-seq/data/genomes/arabidopsis.fasta
-    gff3: /liaozizhuo/repli-ATAC-seq/data/labels/arabidopsis_rt_1024bp.gff3
-    train_chroms: ["1", "2", "3"]
-    val_chroms: ["4"]
-    test_chroms: ["5"]
+  # - name: arabidopsis
+  #   species_id: 2
+  #   fasta: /liaozizhuo/repli-ATAC-seq/data/genomes/Arabidopsis_thaliana.TAIR10.dna.toplevel.fa
+  #   gff3: /liaozizhuo/repli-ATAC-seq/data/labels/arabidopsis_128.gff3
+  #   train_chroms: ["1", "3", "4"]
+  #   val_chroms: ["2"]
+  #   test_chroms: ["5"]

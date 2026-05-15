@@ -130,15 +130,17 @@ def train(config_path: str, resume: str | None = None):
     ).to(device)
 
     if ddp:
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
 
     class_weights = cfg.get("loss", {}).get("class_weights", None)
     criterion = RTClassLoss(class_weights=class_weights).to(device)
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=cfg["training"]["learning_rate"],
         betas=(0.9, 0.999),
+        weight_decay=cfg["training"].get("weight_decay", 0.01),
     )
     scaler = GradScaler(enabled=cfg["training"]["mixed_precision"])
 

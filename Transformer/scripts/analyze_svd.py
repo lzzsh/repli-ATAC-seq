@@ -9,7 +9,8 @@ Usage:
         --species rice \
         --n_samples 32 \
         --top_k 64 \
-        --out_dir outputs/svd_analysis
+        --out_dir outputs/svd_analysis \
+        --batch_size 8
 """
 import argparse
 import sys
@@ -42,6 +43,7 @@ def parse_args():
     p.add_argument("--n_samples",  type=int, default=32, help="Samples for forward pass")
     p.add_argument("--top_k",      type=int, default=64,  help="Singular values to plot")
     p.add_argument("--out_dir",    default="outputs/svd_analysis")
+    p.add_argument("--batch_size", type=int, default=8, help="Forward pass batch size")
     return p.parse_args()
 
 
@@ -132,12 +134,20 @@ def _reshape_activation(name: str, act: torch.Tensor) -> torch.Tensor:
         return act.permute(0, 2, 1).reshape(-1, d1).float()
 
 
-def _svd_metrics(mat: torch.Tensor, top_k: int, centered: bool) -> dict:
+def _svd_metrics(mat: torch.Tensor, top_k: int, centered: bool, device: torch.device) -> dict:
     if centered:
         mat = mat - mat.mean(dim=0, keepdim=True)
     try:
-        _, S, _ = torch.linalg.svd(mat, full_matrices=False)
-    except Exception:
+        # cuSOLVER gesvdj has a row-count limit; fall back to CPU for large matrices
+        if device.type == "cuda" and mat.shape[0] > 65535:
+            _, S, _ = torch.linalg.svd(mat, full_matrices=False)
+        else:
+            mat_gpu = mat.to(device)
+            _, S, _ = torch.linalg.svd(mat_gpu, full_matrices=False)
+            S = S.cpu()
+            del mat_gpu
+    except Exception as e:
+        print(f"    SVD exception: {e}")
         return None
     S = S.numpy()
     S = S[S > 0]
@@ -148,7 +158,7 @@ def _svd_metrics(mat: torch.Tensor, top_k: int, centered: bool) -> dict:
     return {"effective_rank": effective_rank, "rank_90pct": rank_90, "singular_values": S[:top_k]}
 
 
-def compute_svd_metrics(activations: Dict[str, List], top_k: int) -> List[dict]:
+def compute_svd_metrics(activations: Dict[str, List], top_k: int, device: torch.device) -> List[dict]:
     results = []
     for name, tensor_list in activations.items():
         act = torch.cat(tensor_list, dim=0)
@@ -156,8 +166,8 @@ def compute_svd_metrics(activations: Dict[str, List], top_k: int) -> List[dict]:
         if mat is None:
             continue
 
-        raw = _svd_metrics(mat, top_k, centered=False)
-        cen = _svd_metrics(mat, top_k, centered=True)
+        raw = _svd_metrics(mat, top_k, centered=False, device=device)
+        cen = _svd_metrics(mat, top_k, centered=True,  device=device)
         if raw is None or cen is None:
             print(f"  SVD failed for {name}")
             continue
@@ -254,8 +264,8 @@ if __name__ == "__main__":
 
     print("Running forward pass ...")
     with torch.no_grad():
-        for i in range(one_hot.shape[0]):
-            model(one_hot[i:i+1], head=args.species)
+        for i in range(0, one_hot.shape[0], args.batch_size):
+            model(one_hot[i:i + args.batch_size], head=args.species)
 
     for h in handles:
         h.remove()
@@ -263,7 +273,7 @@ if __name__ == "__main__":
     print(f"Collected activations for {len(activations)} layers")
 
     print("Computing SVD metrics ...")
-    results = compute_svd_metrics(activations, args.top_k)
+    results = compute_svd_metrics(activations, args.top_k, device)
 
     header = (f"{'Layer':<35} {'Dim':>6}"
               f"  {'EffRank':>9} {'R90%':>6}"
