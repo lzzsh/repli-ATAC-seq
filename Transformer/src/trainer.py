@@ -69,13 +69,14 @@ def _validate(model, val_loaders: dict, criterion, device) -> dict:
             valid = sp_lab.reshape(-1) != -1
             if valid.any():
                 per_species[sp_name] = evaluate_predictions(
-                    sp_log.reshape(-1, 4)[valid], sp_lab.reshape(-1)[valid]
+                    sp_log.reshape(-1, sp_log.shape[-1])[valid], sp_lab.reshape(-1)[valid]
                 )
             all_logits.append(sp_log)
             all_labels.append(sp_lab)
 
     # aggregate across species (ignore bins excluded)
-    flat_log = np.concatenate(all_logits).reshape(-1, 4)
+    flat_log = np.concatenate(all_logits)
+    flat_log = flat_log.reshape(-1, flat_log.shape[-1])
     flat_lab = np.concatenate(all_labels).reshape(-1)
     valid = flat_lab != -1
     metrics = evaluate_predictions(flat_log[valid], flat_lab[valid]) if valid.any() else {}
