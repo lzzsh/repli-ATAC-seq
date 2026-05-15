@@ -1,0 +1,49 @@
+output_dir: outputs/basenji2_wt
+log_dir: logs
+
+data:
+  manifest: data/manifest.yaml
+  input_window_length: 196608
+
+augmentation:
+  rc_prob: 0.5
+  shift_max: 1024
+
+model:
+  # Conv trunk
+  pool_type: attn
+  stem_channels: 256
+  stem_kernel_size: 15
+  tower_filter_list: [256, 256, 320, 384, 384, 512, 512]
+  bn_momentum: 0.1        # TF bn_momentum=0.9 → PyTorch momentum=1-0.9=0.1
+  # Transformer tower
+  d_model: 384
+  n_heads: 8
+  dim_key: 64
+  n_layers: 2
+  dropout: 0.1
+  attn_dropout: 0.05
+  pos_dropout: 0.01
+  # Final pointwise
+  pointwise_channels: 1024
+  final_dropout: 0.1
+  # Sequence geometry
+  crop_size: 320          # bins cropped from each side before prediction head
+  n_output_bins: 4        # signal channels: G1, ES, MS, LS
+
+
+loss:
+  huber_delta: 1.0
+
+training:
+  weight_decay: 0.01
+  learning_rate: 0.0005
+  warmup_steps: 1000
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  max_epochs: 200
+  early_stopping_patience: 32
+  gradient_clip_norm: 1.0
+  mixed_precision: true
+  seed: 42
+
