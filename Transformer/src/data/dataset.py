@@ -41,7 +41,6 @@ def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
 # ── dataset ───────────────────────────────────────────────────────────────────
 class RepliSeqDataset(Dataset):
     _BIN_SIZE    = 128
-    _OUT_BIN     = 128
     _OUT_BINS    = 896
     _CROP_BINS   = 320
 
@@ -54,8 +53,8 @@ class RepliSeqDataset(Dataset):
         shift_max: int = 0,
     ):
         self.window_size = window_size
-        self.rc_prob = rc_prob if split == "train" else 0.0
-        self.shift_max = shift_max if split == "train" else 0
+        self.rc_prob = rc_prob
+        self.shift_max = shift_max
         self._stride = window_size - 2 * self._CROP_BINS * self._BIN_SIZE
         self.samples: list[dict] = []
         self.genomes: dict[str, GenomeSequence] = {}
@@ -98,7 +97,7 @@ class RepliSeqDataset(Dataset):
 
         out_offset = win_start + self._CROP_BINS * self._BIN_SIZE
         signals = self._signal_queries[s["species"]](
-            s["chrom"], out_offset, self._OUT_BINS, self._OUT_BIN
+            s["chrom"], out_offset, self._OUT_BINS, self._BIN_SIZE
         )  # [896, 4] float32, NaN where unannotated
 
         # apply log1p to valid (non-NaN) bins; NaN bins stay NaN
