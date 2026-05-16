@@ -2,12 +2,12 @@
 """
 python scripts/evaluate.py --mode wt \
     --config src/configs/transformer_wt.yaml \
-    --checkpoint outputs/transformer_wt/checkpoints/best_model.pt \
+    --checkpoint outputs/basenji2_wt/checkpoints/best_model.pt \
     --output outputs/metrics
 
 python scripts/evaluate.py --mode cross_species \
     --config src/configs/transformer_wt.yaml \
-    --checkpoint outputs/transformer_wt/checkpoints/best_model.pt \
+    --checkpoint outputs/basenji2_wt/checkpoints/best_model.pt \
     --output outputs/metrics
 """
 import argparse

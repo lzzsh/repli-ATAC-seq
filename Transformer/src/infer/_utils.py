@@ -1,8 +1,10 @@
 import numpy as np
 import torch
 import yaml
+from pathlib import Path
 
 from ..data.data_utils import GenomeSequence, one_hot_encode, reverse_complement
+from ..data.dataset import load_manifest
 from ..models.model import RepliformerModel
 from ..models.config_model import RepliformerConfig
 
@@ -10,8 +12,14 @@ from ..models.config_model import RepliformerConfig
 def load_model(checkpoint: str, config: str, device: torch.device):
     with open(config) as f:
         cfg = yaml.safe_load(f)
+    manifest_path = cfg["data"]["manifest"]
+    if not Path(manifest_path).is_absolute():
+        # resolve relative to project root (two levels up from src/configs/)
+        candidate = Path(config).parent.parent / manifest_path
+        if candidate.exists():
+            manifest_path = str(candidate)
+    species_configs = load_manifest(manifest_path)
     ckpt = torch.load(checkpoint, map_location=device)
-    species_configs = ckpt.get("species_configs")
     model = RepliformerModel(
         species_configs=species_configs,
         model_cfg=RepliformerConfig(**cfg.get("model", {})),
@@ -55,10 +63,10 @@ def fetch_one_hot(genome: GenomeSequence, chrom: str, start: int, end: int,
     return one_hot_encode(seq)  # [4, L]
 
 
-def rc_average(model: RepliformerModel, batch: torch.Tensor) -> torch.Tensor:
+def rc_average(model: RepliformerModel, batch: torch.Tensor, head: str) -> torch.Tensor:
     """Average forward and reverse-complement predictions. batch: [B, 4, L]."""
     with torch.no_grad():
-        fwd = model(batch)["phase_pred"]                        # [B, T, 4]
-        rc = torch.flip(batch, dims=[-1])[:, [3, 2, 1, 0], :]
-        rev = torch.flip(model(rc)["phase_pred"], dims=[1])     # flip bin dim
+        fwd = model(batch, head=head)["rt_signals"]                        # [B, T, 4]
+        rc  = torch.flip(batch, dims=[-1])[:, [3, 2, 1, 0], :]
+        rev = torch.flip(model(rc, head=head)["rt_signals"], dims=[1])     # flip bin dim
     return (fwd + rev) / 2
