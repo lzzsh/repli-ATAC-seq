@@ -2,7 +2,7 @@ species:
   - name: rice
     species_id: 0
     fasta: /liaozizhuo/repli-ATAC-seq/data/genomes/rice_all_genomes_v7.fasta
-    tsv: /liaozizhuo/repli-ATAC-seq/data/labels/rice_wt_rt_signals.tsv
+    gff3: /liaozizhuo/repli-ATAC-seq/data/labels/rice_wt_rt_128.gff3
     train_chroms: [chr01, chr03, chr04, chr05, chr06, chr07, chr08, chr09]
     val_chroms: [chr02, chr10]
     test_chroms: [chr11, chr12]

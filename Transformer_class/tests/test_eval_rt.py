@@ -1,41 +1,35 @@
+# tests/test_eval_rt.py
 import numpy as np
 import pytest
 from src.eval import evaluate_predictions
 
-_CHANNELS = ["G1", "ES", "MS", "LS"]
-
-
-def test_evaluate_predictions_perfect_correlation():
-    rng = np.random.default_rng(0)
-    signals = rng.random((100, 4)).astype(np.float32)
-    m = evaluate_predictions(signals, signals)
-    for ch in _CHANNELS:
-        assert m[f"pearson_{ch}"] == pytest.approx(1.0, abs=1e-5)
-    assert m["mean_pearson"] == pytest.approx(1.0, abs=1e-5)
-
-
-def test_evaluate_predictions_keys():
-    rng = np.random.default_rng(1)
-    pred = rng.random((50, 4)).astype(np.float32)
-    true = rng.random((50, 4)).astype(np.float32)
-    m = evaluate_predictions(pred, true)
-    for ch in _CHANNELS:
-        assert f"pearson_{ch}" in m
-    assert "mean_pearson" in m
-    assert "mse" in m
-    assert "mae" in m
-
-
-def test_evaluate_predictions_mse_zero_for_perfect():
-    rng = np.random.default_rng(2)
-    signals = rng.random((50, 4)).astype(np.float32)
-    m = evaluate_predictions(signals, signals)
-    assert m["mse"] == pytest.approx(0.0, abs=1e-6)
-    assert m["mae"] == pytest.approx(0.0, abs=1e-6)
-
+def test_evaluate_predictions_perfect():
+    # 3 classes × 3 samples × 28 bins, all predicted correctly
+    logits = np.zeros((3, 28, 3))
+    labels = np.zeros((3, 28), dtype=np.int64)
+    for c in range(3):
+        logits[c, :, c] = 10.0
+        labels[c, :] = c
+    m = evaluate_predictions(logits, labels)
+    assert m["macro_f1"] > 0.9
+    assert "acc_ES" in m and "acc_MS" in m and "acc_LS" in m
+    assert "acc_NR" not in m
 
 def test_evaluate_predictions_flat_input():
-    pred = np.ones((20, 4), dtype=np.float32)
-    true = np.ones((20, 4), dtype=np.float32)
-    m = evaluate_predictions(pred, true)
-    assert "mean_pearson" in m
+    # also accepts [N, 3] logits and [N] labels
+    logits = np.zeros((56, 3))
+    logits[:, 0] = 10.0
+    labels = np.zeros(56, dtype=np.int64)
+    m = evaluate_predictions(logits, labels)
+    assert m["acc_ES"] == pytest.approx(1.0)
+    assert m["macro_f1"] > 0.0
+
+def test_evaluate_predictions_ignore_bins():
+    # ignore bins (label=-1) 不参与 metrics
+    logits = np.zeros((10, 3))
+    logits[:, 0] = 10.0
+    labels = np.array([-1, -1, 0, 0, 1, 1, 2, 2, 0, 0], dtype=np.int64)
+    m = evaluate_predictions(logits, labels)
+    # 只有 label != -1 的 8 个 bin 参与，ES 全对，MS/LS 全错
+    assert m["acc_ES"] == pytest.approx(1.0)
+    assert m["acc_MS"] == pytest.approx(0.0)

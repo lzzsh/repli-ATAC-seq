@@ -32,11 +32,11 @@ def test_transformer_block_residual():
     out = block(x)
     assert out.shape == (1, 16, 192)
 
-from src.models.model import RepliformerModel, RTSignalLoss
+from src.models.model import RepliformerModel, RTClassLoss
 from src.data.dataset import SpeciesConfig
 
 def _make_sp(name="rice"):
-    return SpeciesConfig(name=name, fasta="", tsv="",
+    return SpeciesConfig(name=name, fasta="", gff3="",
                          train_chroms=[], val_chroms=[], test_chroms=[],
                          species_id=0)
 
@@ -44,14 +44,14 @@ def test_model_output_shape_transformer_head():
     model = RepliformerModel([_make_sp()])
     x = torch.zeros(1, 4, 196608)
     out = model(x, head="rice")
-    assert out["rt_signals"].shape == (1, 896, 4)
+    assert out["rt_logits"].shape == (1, 896, 3)
 
 def test_model_loss_finite():
     model = RepliformerModel([_make_sp()])
-    criterion = RTSignalLoss()
+    criterion = RTClassLoss()
     x = torch.zeros(1, 4, 196608)
-    signals = torch.rand(1, 896, 4)
+    labels = torch.randint(0, 3, (1, 896))
     out = model(x, head="rice")
-    loss = criterion(out, {"rt_signals": signals})
+    loss = criterion(out, {"rt_labels": labels})
     assert torch.isfinite(loss["total"])
-    assert loss["total"].item() >= 0
+    assert loss["total"].item() > 0

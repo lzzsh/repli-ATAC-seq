@@ -314,14 +314,21 @@ class RepliformerModel(nn.Module):
         x = _enformer_gelu(self.final_bn(x))
         x = _enformer_gelu(self.final_drop(self.final_conv(x)))
         x = x.permute(0, 2, 1)
-        return {"rt_signals": F.softplus(self._heads[head](x))}
+        return {"rt_logits": self._heads[head](x)}
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
-class RTSignalLoss(nn.Module):
+class RTClassLoss(nn.Module):
+    def __init__(self, class_weights: list[float] | None = None):
+        super().__init__()
+        if class_weights is not None:
+            self.register_buffer("weight", torch.tensor(class_weights, dtype=torch.float32))
+        else:
+            self.weight = None
+
     def forward(self, outputs: dict, batch: dict) -> dict:
-        pred   = outputs["rt_signals"]   # [B, T, 4]
-        target = batch["rt_signals"]     # [B, T, 4]
-        mask = ~torch.isnan(target)
-        loss = F.smooth_l1_loss(pred[mask], target[mask])
+        logits = outputs["rt_logits"]
+        labels = batch["rt_labels"]
+        loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), labels.reshape(-1),
+                               weight=self.weight, ignore_index=-1)
         return {"total": loss, "rt": loss}

@@ -26,7 +26,7 @@ class RepliformerConfig(PretrainedConfig):
         final_dropout: float = 0.05,
         # ── Sequence / output geometry ────────────────────────────────────────
         crop_size: int = 320,           # bins cropped from each side before head
-        n_output_bins: int = 4,         # signal channels: G1, ES, MS, LS
+        n_output_bins: int = 3,         # RT classes per bin (ES, MS, LS)
         **kwargs,
     ):
         # default Enformer conv-tower filter schedule

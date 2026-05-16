@@ -29,11 +29,13 @@ model:
   final_dropout: 0.1
   # Sequence geometry
   crop_size: 320          # bins cropped from each side before prediction head
-  n_output_bins: 4        # signal channels: G1, ES, MS, LS
+  n_output_bins: 4        # RT classes (ES, MS, LS, NR)# RT classes (ES, MS, LS, NR)
 
 
 loss:
-  huber_delta: 1.0
+  lambda_phase: 1.0
+  # 类别权重：ES, MS, LS, NR（按训练集频率倒数设置，先用均匀权重）
+  # class_weights: [1.43, 1.43, 1.43, 1.0]
 
 training:
   weight_decay: 0.01

@@ -5,7 +5,7 @@ from src.data.dataset import SpeciesConfig
 from src.models.model import RepliformerModel
 
 def _make_configs(names):
-    return [SpeciesConfig(name=n, fasta="", tsv="",
+    return [SpeciesConfig(name=n, fasta="", gff3="",
                           train_chroms=[], val_chroms=[], test_chroms=[],
                           species_id=i)
             for i, n in enumerate(names)]
@@ -19,7 +19,7 @@ def test_forward_returns_correct_shape():
     model = RepliformerModel(_make_configs(["rice"]))
     x = torch.zeros(2, 4, 196608)
     out = model(x, head="rice")
-    assert out["rt_signals"].shape == (2, 896, 4)
+    assert out["rt_logits"].shape == (2, 896, 3)
 
 def test_forward_unknown_head_raises():
     model = RepliformerModel(_make_configs(["rice"]))
