@@ -276,6 +276,16 @@ def train(config_path: str, resume: str | None = None):
             ]
             if sp_pearson_parts:
                 logger.info("  per-species Pearson: " + " ".join(sp_pearson_parts))
+            cell_types = ["ES", "MS", "LS", "G1"]
+            sp_names = [k.split("/")[0] for k in metrics if k.endswith("/mean_pearson")]
+            for sp in sp_names:
+                ct_parts = [
+                    f"{ct}={metrics[f'{sp}/pearson_{ct}']:.3f}"
+                    for ct in cell_types
+                    if f"{sp}/pearson_{ct}" in metrics
+                ]
+                if ct_parts:
+                    logger.info(f"    {sp}: " + " ".join(ct_parts))
             if val_loss < best_score:
                 best_score = val_loss
                 patience = 0
