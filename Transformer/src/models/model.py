@@ -200,14 +200,13 @@ class _TransformerBlock(nn.Module):
         self.ff1   = nn.Linear(d_model, d_model * 2)
         self.ff2   = nn.Linear(d_model * 2, d_model)
         self.drop2 = nn.Dropout(dropout)
-        self.drop3 = nn.Dropout(dropout)
-        self.act   = nn.ReLU()          # Enformer FFN uses ReLU
+        self.act   = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.drop1(self.attn(self.norm1(x)))
         h = self.norm2(x)
         h = self.ff2(self.drop2(self.act(self.ff1(h))))
-        return x + self.drop3(h)
+        return x + h
 
 
 # ── Enformer trunk ────────────────────────────────────────────────────────────
@@ -314,21 +313,14 @@ class RepliformerModel(nn.Module):
         x = _enformer_gelu(self.final_bn(x))
         x = _enformer_gelu(self.final_drop(self.final_conv(x)))
         x = x.permute(0, 2, 1)
-        return {"rt_logits": self._heads[head](x)}
+        return {"rt_signals": F.softplus(self._heads[head](x))}
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
-class RTClassLoss(nn.Module):
-    def __init__(self, class_weights: list[float] | None = None):
-        super().__init__()
-        if class_weights is not None:
-            self.register_buffer("weight", torch.tensor(class_weights, dtype=torch.float32))
-        else:
-            self.weight = None
-
+class RTSignalLoss(nn.Module):
     def forward(self, outputs: dict, batch: dict) -> dict:
-        logits = outputs["rt_logits"]
-        labels = batch["rt_labels"]
-        loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), labels.reshape(-1),
-                               weight=self.weight, ignore_index=-1)
+        pred   = outputs["rt_signals"]   # [B, T, 4]
+        target = batch["rt_signals"]     # [B, T, 4]
+        mask = ~torch.isnan(target)
+        loss = F.smooth_l1_loss(pred[mask], target[mask])
         return {"total": loss, "rt": loss}
