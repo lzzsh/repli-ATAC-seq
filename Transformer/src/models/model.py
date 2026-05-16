@@ -154,6 +154,7 @@ class _EnformerAttention(nn.Module):
         self.pos_dropout  = nn.Dropout(pos_dropout)
         self.attn_dropout = nn.Dropout(attn_dropout)
         self.num_rel_pos_features = num_rel_pos_features
+        self._pos_embed_cache: torch.Tensor | None = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, _ = x.shape
@@ -169,9 +170,12 @@ class _EnformerAttention(nn.Module):
         # content logits: (q + r_w_bias) @ k^T
         content_logits = torch.einsum('bhid,bhjd->bhij', q + self.rel_content_bias, k)
 
-        # relative position logits
-        positions = _get_positional_embed(T, self.num_rel_pos_features, x.device)
-        positions = self.pos_dropout(positions)
+        # relative position logits — recompute only when T or device changes
+        if (self._pos_embed_cache is None
+                or self._pos_embed_cache.shape[0] != 2 * T - 1
+                or self._pos_embed_cache.device != x.device):
+            self._pos_embed_cache = _get_positional_embed(T, self.num_rel_pos_features, x.device)
+        positions = self.pos_dropout(self._pos_embed_cache)
         rel_k = self.to_rel_k(positions)                             # [2T-1, H*D]
         rel_k = rel_k.reshape(-1, H, D).permute(1, 0, 2)            # [H, 2T-1, D]
         rel_logits = torch.einsum('bhid,hjd->bhij', q + self.rel_pos_bias, rel_k)

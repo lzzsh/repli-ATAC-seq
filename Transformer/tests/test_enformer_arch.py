@@ -52,3 +52,22 @@ def test_dataset_out_bins():
 
 def test_dataset_out_bin_size():
     assert RepliSeqDataset._BIN_SIZE == 128
+
+from unittest.mock import patch as _patch
+
+def test_positional_embed_cached_across_calls():
+    """_get_positional_embed must not be called more than once for same T and device."""
+    from src.models.model import _EnformerAttention, _get_positional_embed as _orig_fn
+    attn = _EnformerAttention(d_model=192, n_heads=4, dim_key=16)
+    x = torch.zeros(1, 8, 192)
+    call_count = [0]
+
+    def counting_wrapper(*args, **kwargs):
+        call_count[0] += 1
+        return _orig_fn(*args, **kwargs)
+
+    with _patch("src.models.model._get_positional_embed", side_effect=counting_wrapper):
+        attn(x)
+        attn(x)
+
+    assert call_count[0] == 1, f"Expected 1 call, got {call_count[0]}"
