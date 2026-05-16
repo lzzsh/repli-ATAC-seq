@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from torch.utils.data import Dataset
 
-from .data_utils import GenomeSequence, load_labels, load_labels_indexed, reverse_complement, RT_CLASS_MAP, one_hot_encode
+from .data_utils import GenomeSequence, load_signals, load_signals_indexed, reverse_complement, one_hot_encode
 
 
 # ── manifest ──────────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ from .data_utils import GenomeSequence, load_labels, load_labels_indexed, revers
 class SpeciesConfig:
     name: str
     fasta: str
-    gff3: str
+    tsv: str
     train_chroms: list[str]
     val_chroms: list[str]
     test_chroms: list[str]
@@ -30,7 +30,7 @@ def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
     return [
         SpeciesConfig(
             name=sp["name"], fasta=sp["fasta"],
-            gff3=sp["gff3"],
+            tsv=sp["tsv"],
             train_chroms=sp["train_chroms"], val_chroms=sp["val_chroms"],
             test_chroms=sp["test_chroms"], species_id=sp["species_id"],
         )
@@ -40,11 +40,10 @@ def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
 
 # ── dataset ───────────────────────────────────────────────────────────────────
 class RepliSeqDataset(Dataset):
-    _BIN_SIZE    = 128      # bp per trunk output bin
-    _OUT_BIN     = 128      # bp per model output bin (no pooling)
-    _OUT_BINS    = 896      # 196608/128 - 640 = 896 (crop 320 each side)
-    _CROP_BINS   = 320      # trunk crops 320 bins each side at 128bp (= 40960 bp)
-    _STRIDE      = 114688   # bp between window starts (= output region, zero overlap, matches Enformer)
+    _BIN_SIZE    = 128
+    _OUT_BIN     = 128
+    _OUT_BINS    = 896
+    _CROP_BINS   = 320
 
     def __init__(
         self,
@@ -57,36 +56,30 @@ class RepliSeqDataset(Dataset):
         self.window_size = window_size
         self.rc_prob = rc_prob if split == "train" else 0.0
         self.shift_max = shift_max if split == "train" else 0
+        self._stride = window_size - 2 * self._CROP_BINS * self._BIN_SIZE
         self.samples: list[dict] = []
         self.genomes: dict[str, GenomeSequence] = {}
-        self._label_queries: dict[str, object] = {}
+        self._signal_queries: dict[str, object] = {}
 
         for sp in species_configs:
             self.genomes[sp.name] = GenomeSequence(sp.fasta)
-            df = load_labels(sp.gff3, sp.name)
+            df = load_signals(sp.tsv, sp.name)
             chroms = getattr(sp, f"{split}_chroms")
             df = df[df["chrom"].isin(chroms)].reset_index(drop=True)
-            self._label_queries[sp.name] = load_labels_indexed(df)
+            self._signal_queries[sp.name] = load_signals_indexed(df)
 
-            annotated = set(zip(df["chrom"], df["start"]))
+            annotated_chroms = set(df["chrom"].unique())
             for chrom in chroms:
+                if chrom not in annotated_chroms:
+                    continue
                 chrom_size = self.genomes[sp.name].chrom_size(chrom)
-                for win_start in range(0, chrom_size - window_size + 1, self._STRIDE):
-                    # first output bin starts after the 320-bin trunk crop
-                    out_offset = win_start + self._CROP_BINS * self._BIN_SIZE
-                    has_label = any(
-                        (chrom, ((out_offset + i * self._OUT_BIN + self._OUT_BIN // 2)
-                                 // self._OUT_BIN) * self._OUT_BIN)
-                        in annotated
-                        for i in range(self._OUT_BINS)
-                    )
-                    if has_label:
-                        self.samples.append({
-                            "species": sp.name,
-                            "species_id": sp.species_id,
-                            "chrom": chrom,
-                            "win_start": win_start,
-                        })
+                for win_start in range(0, chrom_size - window_size + 1, self._stride):
+                    self.samples.append({
+                        "species": sp.name,
+                        "species_id": sp.species_id,
+                        "chrom": chrom,
+                        "win_start": win_start,
+                    })
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -104,15 +97,20 @@ class RepliSeqDataset(Dataset):
             seq = reverse_complement(seq)
 
         out_offset = win_start + self._CROP_BINS * self._BIN_SIZE
-        labels = self._label_queries[s["species"]](
+        signals = self._signal_queries[s["species"]](
             s["chrom"], out_offset, self._OUT_BINS, self._OUT_BIN
-        )  # [896] int64
+        )  # [896, 4] float32, NaN where unannotated
+
+        # apply log1p to valid (non-NaN) bins; NaN bins stay NaN
+        nan_mask = np.isnan(signals)
+        signals = np.log1p(np.where(nan_mask, 0.0, signals))
+        signals[nan_mask] = np.nan
+
         if rc:
-            labels = labels[::-1].copy()
+            signals = signals[::-1].copy()
 
         return {
             "one_hot": torch.tensor(one_hot_encode(seq), dtype=torch.float32),
             "species_id": torch.tensor(s["species_id"], dtype=torch.long),
-            "rt_labels": torch.tensor(labels, dtype=torch.long),  # [896]
+            "rt_signals": torch.tensor(signals, dtype=torch.float32),  # [896, 4]
         }
-
