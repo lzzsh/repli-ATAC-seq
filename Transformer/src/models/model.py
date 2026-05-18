@@ -326,5 +326,5 @@ class RTSignalLoss(nn.Module):
         pred   = outputs["rt_signals"]   # [B, T, 4]
         target = batch["rt_signals"]     # [B, T, 4]
         mask = ~torch.isnan(target)
-        loss = F.smooth_l1_loss(pred[mask], target[mask])
+        loss = F.mse_loss(pred[mask], target[mask])
         return {"total": loss, "rt": loss}

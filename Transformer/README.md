@@ -52,14 +52,22 @@ python -c "from pyfaidx import Fasta; Fasta('/path/to/genome.fa')"
 raw counts
     │
     ▼
-TPM 归一化（bin_size = 128 bp）
+CPM 归一化（counts per million，消除 library size 差异）
+    │
+    ▼
+每个 replicate 单独 soft clip（x > 384 → 383 + sqrt(x - 383)）
     │
     ▼
 各期 replicate 取平均 → G1, ES, MS, LS
     │
     ▼
+log1p 变换（压缩动态范围，保持非负）
+    │
+    ▼
 输出 TSV: chrom  start  end  G1  ES  MS  LS
 ```
+
+各物种 head 独立学习各自的信号尺度，不需要跨物种归一化。
 
 #### 运行前处理
 
@@ -85,18 +93,16 @@ python data/preprocess_signals.py maize arabidopsis
 
 **拟南芥（arabidopsis）**：G1 × 1，ES × 3，MS × 3，LS × 3
 
-脚本自动对 replicate 取均值，缺失 replicate 不影响其他通道。
-
 #### 输出 TSV 格式
 
 ```
-chrom   start   end     G1          ES          MS          LS
-chr01   0       128     12.345678   8.234567    5.123456    3.456789
-chr01   128     256     15.678901   9.345678    6.234567    4.567890
+chrom   start   end     G1        ES        MS        LS
+chr01   0       128     0.000000  0.000000  0.000000  0.000000
+chr01   896     1024    0.279134  0.312456  0.198234  0.267891
 ```
 
 - 坐标为 0-based 半开区间（BED 标准）
-- 四列信号均为 TPM 归一化后的均值，float32
+- 四列信号为 `log1p(soft_clip(CPM))`，非负 float32
 
 ### 2.3 数据划分说明
 
@@ -175,7 +181,7 @@ model:
   n_output_bins: 4               # 信号通道数：G1, ES, MS, LS
 
 loss:
-  huber_delta: 1.0               # Smooth L1 loss 的 delta 参数
+  type: mse
 
 training:
   learning_rate: 0.0005
@@ -200,13 +206,23 @@ training:
 
 #### 损失函数
 
-Smooth L1（Huber）loss，对每个 bin 的四通道信号回归：
+MSE loss，对每个 bin 的四通道信号回归：
 
 ```
-loss = SmoothL1(pred_signals, true_signals)   # NaN bin 自动 mask
+loss = MSE(pred_signals, true_signals)   # NaN bin 自动 mask
 ```
 
-模型输出经 `softplus` 激活保证非负，输入信号在数据集中做 `log1p` 变换。
+模型输出经 `softplus` 激活保证非负，与 `log1p(CPM)` target 空间匹配。
+
+#### WRT
+
+WRT（Weighted Replication Timing）由预测的 ES/MS/LS 信号推导：
+
+```
+WRT = (0.5 × MS + LS) / (ES + MS + LS + ε)
+```
+
+在验证时自动计算并报告 WRT Pearson，无需额外预测头。
 
 #### 梯度流向
 
@@ -247,16 +263,16 @@ TensorBoard 记录：
 - `train/lr`
 - `val/loss_total`、`val/loss_rt`
 - `val/pearson_mean`（所有物种平均 Pearson）
-- `val/{species}/pearson_{G1,ES,MS,LS}`（每物种每通道 Pearson）
+- `val/{species}/pearson_{G1,ES,MS,LS,WRT}`（每物种每通道 + WRT Pearson）
 
 日志示例：
 
 ```
 epoch=76 time=817s train_loss=0.0016 val_loss=0.0032 val_pearson=0.6210
   per-species Pearson: rice=0.618 maize=0.624 arabidopsis=0.623
-    rice: ES=0.631 MS=0.625 LS=0.612 G1=0.604
-    maize: ES=0.638 MS=0.621 LS=0.618 G1=0.619
-    arabidopsis: ES=0.629 MS=0.618 LS=0.615 G1=0.630
+    rice: ES=0.631 MS=0.625 LS=0.612 G1=0.604 WRT=0.651
+    maize: ES=0.638 MS=0.621 LS=0.618 G1=0.619 WRT=0.643
+    arabidopsis: ES=0.629 MS=0.618 LS=0.615 G1=0.630 WRT=0.638
 ```
 
 ### 5.6 Checkpoint
@@ -281,7 +297,7 @@ python scripts/evaluate.py \
 
 输出 `outputs/metrics/wt_test_metrics.tsv`，每行一个物种，包含：
 - `mean_pearson`
-- `pearson_G1`、`pearson_ES`、`pearson_MS`、`pearson_LS`
+- `pearson_G1`、`pearson_ES`、`pearson_MS`、`pearson_LS`、`pearson_WRT`
 - `mse`、`mae`
 
 ### 6.2 N×N 跨物种评估
@@ -313,7 +329,7 @@ src/
   configs/
     transformer_wt.yaml   # 训练超参数
   trainer.py              # 训练循环，_validate，TensorBoard
-  eval.py                 # evaluate_predictions, eval_wt, eval_cross_species
+  eval.py                 # evaluate_predictions（含 WRT）, eval_wt, eval_cross_species
 
 scripts/
   train.py                # 训练入口（支持 torchrun）
@@ -322,7 +338,7 @@ scripts/
 
 data/
   manifest.yaml           # 物种清单（路径 + 染色体划分 + species_id）
-  preprocess_signals.py   # Repli-seq 信号前处理（raw counts → TPM TSV）
+  preprocess_signals.py   # Repli-seq 信号前处理（raw counts → log1p CPM TSV）
   genomes/                # 参考基因组 FASTA（不入 git）
   labels/                 # TSV 信号文件（不入 git）
 
@@ -360,7 +376,9 @@ DNA sequence [196 kb]
 [B, 896, 1024]
       │
  Per-species head: Linear(1024→4) → softplus
-[B, 896, 4]  → G1 / ES / MS / LS 连续信号，每 128 bp bin 一组
+[B, 896, 4]  → G1 / ES / MS / LS，每 128 bp bin 一组
+      │
+ WRT（推导，不预测）= (0.5×MS + LS) / (ES + MS + LS + ε)
 ```
 
 ### 8.2 RepliformerConfig
@@ -387,7 +405,7 @@ self._heads = nn.ModuleDict({
 ```
 
 - **Trunk 完全共享**：所有物种共用同一套 conv + transformer 参数
-- **Head 完全独立**：每个物种有自己的 `Linear(1024→4)`，可学习物种特异性偏差
+- **Head 完全独立**：每个物种有自己的 `Linear(1024→4)`，学习物种特异性尺度和偏差
 - **Forward 路由**：`model(one_hot, head="rice")` 指定使用哪个 head
 - **新增物种**：只需在 `manifest.yaml` 加条目，模型初始化时自动创建对应 head
 
@@ -402,9 +420,9 @@ self._heads = nn.ModuleDict({
 | Clip norm | 1.0 |
 | 有效 batch size | 16（batch 4 × 梯度累积 4） |
 | 数据增强 | reverse complement (p=0.5) + random shift (±1024 bp) |
-| Loss | Smooth L1（Huber, delta=1.0） |
-| 输出激活 | softplus（保证非负） |
-| 输入变换 | log1p（数据集内） |
+| Loss | MSE |
+| 输出激活 | softplus（非负，匹配 log1p CPM target） |
+| Target 变换 | log1p(soft_clip(CPM))，预处理时完成 |
 
 ### 8.5 采样策略
 

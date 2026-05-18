@@ -284,6 +284,9 @@ def train(config_path: str, resume: str | None = None):
                     for ct in cell_types
                     if f"{sp}/pearson_{ct}" in metrics
                 ]
+                wrt_key = f"{sp}/pearson_WRT"
+                if wrt_key in metrics:
+                    ct_parts.append(f"WRT={metrics[wrt_key]:.3f}")
                 if ct_parts:
                     logger.info(f"    {sp}: " + " ".join(ct_parts))
             if val_loss < best_score:

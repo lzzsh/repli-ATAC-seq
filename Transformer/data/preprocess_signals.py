@@ -1,10 +1,17 @@
 """
 Convert raw-count BED files (128 bp bins) to model-ready TSV signals.
 
-Pipeline per species:
-  1. TPM normalise each sample column (bin_size = 128 bp)
-  2. Average replicates → G1, ES, MS, LS
-  3. Write TSV: chrom  start  end  G1  ES  MS  LS
+Pipeline per species (Enformer style):
+  1. CPM normalise each sample column (counts per million reads)
+  2. Soft clip each replicate: x > CLIP → CLIP - 1 + sqrt(x - CLIP + 1)
+  3. Average replicates → G1, ES, MS, LS
+  4. log1p transform: log(1 + x)
+  5. Write TSV: chrom  start  end  G1  ES  MS  LS
+
+Output values are non-negative (log1p of clipped CPM).
+Model output uses Softplus activation to match this target space.
+Each species is normalised independently; cross-species comparability
+is handled by per-species output heads, not by the target values.
 
 Usage:
   python preprocess_signals.py          # processes all three species
@@ -16,10 +23,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-BIN_SIZE = 128
-OUT_DIR = Path(__file__).parent / "labels"
+OUT_DIR   = Path(__file__).parent / "labels"
+CLIP_SOFT = 384.0   # soft clip threshold on CPM values (matches basenji2)
 
-# ── species configs ───────────────────────────────────────────────────────────
 SPECIES = {
     "rice": {
         "input": OUT_DIR / "repli_peaks_quan_128.txt",
@@ -61,13 +67,19 @@ SPECIES = {
 }
 
 
-def tpm_normalise(df: pd.DataFrame, sample_cols: list[str]) -> pd.DataFrame:
-    rpk_per_kb = 1000.0 / BIN_SIZE  # constant for fixed-size bins
+def cpm_normalise(df: pd.DataFrame, sample_cols: list[str]) -> pd.DataFrame:
     for col in sample_cols:
-        rpk = df[col] * rpk_per_kb
-        scale = rpk.sum() / 1e6
-        df[col] = rpk / scale if scale > 0 else rpk
+        total = df[col].sum()
+        if total > 0:
+            df[col] = df[col] / total * 1e6
     return df
+
+
+def soft_clip(arr: np.ndarray, threshold: float) -> np.ndarray:
+    out = arr.copy()
+    mask = out > threshold
+    out[mask] = threshold - 1.0 + np.sqrt(arr[mask] - threshold + 1.0)
+    return out
 
 
 def process(name: str, cfg: dict) -> None:
@@ -76,16 +88,27 @@ def process(name: str, cfg: dict) -> None:
                      names=["chrom", "start", "end"] + cfg["cols"],
                      dtype={"chrom": str}, low_memory=False)
 
-    print(f"[{name}] TPM normalising {len(cfg['cols'])} samples ...", flush=True)
-    df = tpm_normalise(df, cfg["cols"])
+    print(f"[{name}] CPM normalising {len(cfg['cols'])} samples ...", flush=True)
+    df = cpm_normalise(df, cfg["cols"])
+
+    print(f"[{name}] soft clip each replicate (threshold={CLIP_SOFT}) ...", flush=True)
+    for col in cfg["cols"]:
+        df[col] = soft_clip(df[col].values.astype(np.float64), CLIP_SOFT)
 
     print(f"[{name}] averaging replicates ...", flush=True)
     out = df[["chrom", "start", "end"]].copy()
     for phase, reps in cfg["groups"].items():
-        out[phase] = df[reps].mean(axis=1)
+        out[phase] = df[reps].mean(axis=1).values
+
+    print(f"[{name}] log1p ...", flush=True)
+    for phase in cfg["groups"]:
+        vals = np.log1p(out[phase].values.astype(np.float64))
+        out[phase] = vals.astype(np.float32)
+        print(f"  {phase}: mean={out[phase].mean():.4f}  std={out[phase].std():.4f}"
+              f"  min={out[phase].min():.4f}  max={out[phase].max():.4f}")
 
     out.to_csv(cfg["output"], sep="\t", index=False, float_format="%.6f")
-    print(f"[{name}] wrote {len(out):,} rows → {cfg['output'].name}")
+    print(f"[{name}] wrote {len(out):,} rows → {cfg['output'].name}\n")
 
 
 def main() -> None:

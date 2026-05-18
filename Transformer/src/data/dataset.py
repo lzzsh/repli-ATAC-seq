@@ -100,10 +100,9 @@ class RepliSeqDataset(Dataset):
             s["chrom"], out_offset, self._OUT_BINS, self._BIN_SIZE
         )  # [896, 4] float32, NaN where unannotated
 
-        # apply log1p to valid (non-NaN) bins; NaN bins stay NaN
+        # TSV values are already log1p(soft_clip(CPM)) — load as-is
         nan_mask = np.isnan(signals)
-        signals = np.log1p(np.where(nan_mask, 0.0, signals))
-        signals[nan_mask] = np.nan
+        signals = np.where(nan_mask, np.nan, signals)
 
         if rc:
             signals = signals[::-1].copy()

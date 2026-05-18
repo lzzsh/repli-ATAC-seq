@@ -13,6 +13,14 @@ from .models.config_model import RepliformerConfig
 _SIGNAL_CHANNELS = ["G1", "ES", "MS", "LS"]
 
 
+def _compute_wrt(signals: np.ndarray) -> np.ndarray:
+    """signals: [N, 4] in log1p(CPM) space. Returns WRT [N]."""
+    cpm = np.expm1(np.clip(signals, 0, None))   # back to CPM scale
+    g1, es, ms, ls = cpm[:, 0], cpm[:, 1], cpm[:, 2], cpm[:, 3]
+    eps = 1e-6
+    return (0.5 * ms + ls) / (es + ms + ls + eps)
+
+
 def evaluate_predictions(
     pred_signals: np.ndarray,
     true_signals: np.ndarray,
@@ -38,6 +46,17 @@ def evaluate_predictions(
     m["mean_pearson"] = float(np.mean(valid_r)) if valid_r else float("nan")
     m["mse"] = float(np.mean((pred_signals - true_signals) ** 2))
     m["mae"] = float(np.mean(np.abs(pred_signals - true_signals)))
+
+    # WRT Pearson — computed in CPM space
+    if n_channels == 4:
+        pred_wrt = _compute_wrt(pred_signals)
+        true_wrt = _compute_wrt(true_signals)
+        if len(pred_wrt) > 1 and np.std(true_wrt) > 0:
+            r_wrt, _ = pearsonr(pred_wrt, true_wrt)
+        else:
+            r_wrt = float("nan")
+        m["pearson_WRT"] = float(r_wrt)
+
     return m
 
 

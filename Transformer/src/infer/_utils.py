@@ -14,18 +14,24 @@ def load_model(checkpoint: str, config: str, device: torch.device):
         cfg = yaml.safe_load(f)
     manifest_path = cfg["data"]["manifest"]
     if not Path(manifest_path).is_absolute():
-        # resolve relative to project root (two levels up from src/configs/)
-        candidate = Path(config).parent.parent / manifest_path
-        if candidate.exists():
-            manifest_path = str(candidate)
+        # try progressively higher parent directories until manifest is found
+        config_path = Path(config).resolve()
+        for parent in config_path.parents:
+            candidate = parent / manifest_path
+            if candidate.exists():
+                manifest_path = str(candidate)
+                break
     species_configs = load_manifest(manifest_path)
-    ckpt = torch.load(checkpoint, map_location=device)
+    ckpt = torch.load(checkpoint, map_location="cpu")
+    # use model config saved in checkpoint if available, else fall back to yaml
+    ckpt_cfg = ckpt.get("cfg", {})
+    model_cfg_dict = ckpt_cfg.get("model", cfg.get("model", {}))
     model = RepliformerModel(
         species_configs=species_configs,
-        model_cfg=RepliformerConfig(**cfg.get("model", {})),
+        model_cfg=RepliformerConfig(**model_cfg_dict),
     )
     model.load_state_dict(ckpt["model"])
-    return model.to(device).eval(), cfg
+    return model.to(device).eval(), ckpt_cfg or cfg
 
 
 def parse_bed(bed_path: str):

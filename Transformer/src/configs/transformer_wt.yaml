@@ -20,7 +20,7 @@ model:
   d_model: 384
   n_heads: 8
   dim_key: 64
-  n_layers: 2
+  n_layers: 4
   dropout: 0.1
   attn_dropout: 0.05
   pos_dropout: 0.01
@@ -33,11 +33,11 @@ model:
 
 
 loss:
-  huber_delta: 1.0
+  type: mse
 
 training:
   weight_decay: 0.01
-  learning_rate: 0.0005
+  learning_rate: 0.001
   warmup_steps: 1000
   batch_size: 4
   gradient_accumulation_steps: 4
