@@ -10,7 +10,7 @@ from ..models.config_model import RepliformerConfig
 
 
 def load_model(checkpoint: str, config: str, device: torch.device):
-    with open(config) as f:
+    with open(config, encoding='utf-8') as f:
         cfg = yaml.safe_load(f)
     manifest_path = cfg["data"]["manifest"]
     if not Path(manifest_path).is_absolute():

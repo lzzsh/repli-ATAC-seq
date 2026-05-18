@@ -322,9 +322,18 @@ class RepliformerModel(nn.Module):
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
 class RTSignalLoss(nn.Module):
+    def __init__(self, l1_weight: float = 0.0):
+        super().__init__()
+        self.l1_weight = l1_weight
+
     def forward(self, outputs: dict, batch: dict) -> dict:
         pred   = outputs["rt_signals"]   # [B, T, 4]
         target = batch["rt_signals"]     # [B, T, 4]
         mask = ~torch.isnan(target)
-        loss = F.mse_loss(pred[mask], target[mask])
+        mse = F.mse_loss(pred[mask], target[mask])
+        if self.l1_weight > 0:
+            l1 = F.l1_loss(pred[mask], target[mask])
+            loss = mse + self.l1_weight * l1
+        else:
+            loss = mse
         return {"total": loss, "rt": loss}

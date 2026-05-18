@@ -135,7 +135,8 @@ def train(config_path: str, resume: str | None = None):
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
 
-    criterion = RTSignalLoss().to(device)
+    l1_weight = cfg.get("loss", {}).get("l1_weight", 0.0)
+    criterion = RTSignalLoss(l1_weight=l1_weight).to(device)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),

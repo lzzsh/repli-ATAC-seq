@@ -34,6 +34,7 @@ model:
 
 loss:
   type: mse
+  l1_weight: 0.1
 
 training:
   weight_decay: 0.01
