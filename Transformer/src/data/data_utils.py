@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from pyfaidx import Fasta
+from typing import Optional
 
 # ── constants ────────────────────────────────────────────────────────────────
 SIGNAL_CHANNELS = ["G1", "ES", "MS", "LS"]
@@ -29,8 +30,29 @@ def one_hot_encode(seq: str) -> np.ndarray:
 
 
 class GenomeSequence:
-    def __init__(self, fasta_path: str | Path):
+    def __init__(self, fasta_path: str | Path, open_regions_gff3: Optional[str | Path] = None):
         self.fasta = Fasta(str(fasta_path), as_raw=True, sequence_always_upper=False)
+        self._open_mask: dict[str, np.ndarray] = {}
+        if open_regions_gff3 is not None:
+            self._build_open_mask(open_regions_gff3)
+
+    def _build_open_mask(self, gff3_path: str | Path) -> None:
+        # GFF3 cols: seqname(0), source(1), feature(2), start(3), end(4), ...
+        # GFF3 is 1-based inclusive → convert to 0-based half-open [start-1, end)
+        df = pd.read_csv(
+            gff3_path, sep="\t", header=None, comment="#",
+            usecols=[0, 3, 4], names=["chrom", "start", "end"],
+        )
+        for chrom, grp in df.groupby("chrom"):
+            if chrom not in self.fasta:
+                continue
+            chrom_len = len(self.fasta[chrom])
+            mask = np.zeros(chrom_len, dtype=bool)
+            starts = (grp["start"].values - 1).clip(0, chrom_len)   # 1-based → 0-based
+            ends   = grp["end"].values.clip(0, chrom_len)
+            for s, e in zip(starts, ends):
+                mask[s:e] = True
+            self._open_mask[chrom] = mask
 
     def fetch(self, chrom: str, start: int, end: int, window_size: int = 32768) -> str:
         """Fetch [start, end), pad with N at boundaries, soft-mask → uppercase."""
@@ -40,7 +62,19 @@ class GenomeSequence:
         seq = str(self.fasta[chrom][max(0, start):min(chrom_len, end)]).upper()
         seq = "N" * pad_left + seq + "N" * pad_right
         seq = seq + "N" * max(0, window_size - len(seq))
-        return seq[:window_size]
+        seq = seq[:window_size]
+
+        if chrom in self._open_mask:
+            seq_arr = np.frombuffer(seq.encode("ascii"), dtype=np.uint8).copy()
+            actual_start = max(0, start)
+            actual_end   = min(chrom_len, end)
+            genome_pos   = np.arange(actual_start, actual_end)
+            win_pos      = np.arange(pad_left, pad_left + len(genome_pos))
+            closed       = ~self._open_mask[chrom][genome_pos]
+            seq_arr[win_pos[closed]] = ord("N")
+            seq = seq_arr.tobytes().decode("ascii")
+
+        return seq
 
     def chrom_size(self, chrom: str) -> int:
         return len(self.fasta[chrom])

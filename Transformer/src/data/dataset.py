@@ -2,8 +2,9 @@ import random
 import numpy as np
 import torch
 import yaml
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 from torch.utils.data import Dataset
 
 from .data_utils import GenomeSequence, load_signals, load_signals_indexed, reverse_complement, one_hot_encode
@@ -19,6 +20,7 @@ class SpeciesConfig:
     val_chroms: list[str]
     test_chroms: list[str]
     species_id: int
+    open_regions_gff3: Optional[str] = None
 
 
 def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
@@ -33,6 +35,7 @@ def load_manifest(manifest_yaml: str | Path) -> list[SpeciesConfig]:
             tsv=sp["tsv"],
             train_chroms=sp["train_chroms"], val_chroms=sp["val_chroms"],
             test_chroms=sp["test_chroms"], species_id=sp["species_id"],
+            open_regions_gff3=sp.get("open_regions_gff3"),
         )
         for sp in cfg["species"]
     ]
@@ -61,7 +64,7 @@ class RepliSeqDataset(Dataset):
         self._signal_queries: dict[str, object] = {}
 
         for sp in species_configs:
-            self.genomes[sp.name] = GenomeSequence(sp.fasta)
+            self.genomes[sp.name] = GenomeSequence(sp.fasta, sp.open_regions_gff3)
             df = load_signals(sp.tsv, sp.name)
             chroms = getattr(sp, f"{split}_chroms")
             df = df[df["chrom"].isin(chroms)].reset_index(drop=True)
