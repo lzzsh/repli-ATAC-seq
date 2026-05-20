@@ -11,7 +11,6 @@ Usage:
       --checkpoint /path/to/best_model.pt \
       --config     src/configs/transformer_wt.yaml \
       --fasta      /path/to/arabidopsis.fa \
-      --species    arabidopsis \
       --chroms     1 2 3 4 5 \
       --out_dir    output/arabidopsis_zeroshot \
       [--batch_size 8] [--no_rc]
@@ -54,27 +53,27 @@ def predict_genome(args):
 
     chrom_sizes = {c: len(fa[c]) for c in chroms if c in fa}
 
-    # Build sliding-window regions
-    regions = []
-    for chrom in chroms:
-        if chrom not in chrom_sizes:
-            print(f"  WARNING: {chrom} not in fasta, skipping")
-            continue
-        clen = chrom_sizes[chrom]
-        for s in range(0, clen - window_size + 1, STRIDE):
-            regions.append((chrom, s, s + window_size))
-        # last partial window
-        if clen > window_size and (clen - window_size) % STRIDE != 0:
-            s = clen - window_size
-            if not regions or regions[-1] != (chrom, s, s + window_size):
-                regions.append((chrom, s, s + window_size))
-    print(f"{len(regions):,} windows to predict")
-
-    # Collect per-bin records
     TRACKS = ["G1", "ES", "MS", "LS", "WRT"]
-    records = {t: [] for t in TRACKS}
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    header = [(c, chrom_sizes[c]) for c in chroms if c in chrom_sizes]
+
+    # Open all BigWig handles upfront
+    bw_handles = {}
+    for track in TRACKS:
+        bw = pyBigWig.open(str(out_dir / f"{track}.bw"), "w")
+        bw.addHeader(header)
+        bw_handles[track] = bw
+
+    model.eval()
+    total_windows = sum(
+        len(range(0, chrom_sizes[c] - window_size + 1, STRIDE))
+        for c in chroms if c in chrom_sizes
+    )
+    print(f"{total_windows:,} windows to predict")
 
     batch_oh, batch_meta = [], []
+    done = 0
 
     def flush():
         if not batch_oh:
@@ -93,43 +92,37 @@ def predict_genome(args):
 
         for i, (chrom, win_start, _) in enumerate(batch_meta):
             out_start = win_start + CROP_BINS * BIN_SIZE
-            for k in range(OUT_BINS):
-                bs = out_start + k * BIN_SIZE
-                be = bs + BIN_SIZE
-                records["G1"].append((chrom, bs, be, float(g1[i, k])))
-                records["ES"].append((chrom, bs, be, float(es[i, k])))
-                records["MS"].append((chrom, bs, be, float(ms[i, k])))
-                records["LS"].append((chrom, bs, be, float(ls[i, k])))
-                records["WRT"].append((chrom, bs, be, float(wrt[i, k])))
+            starts = [out_start + k * BIN_SIZE for k in range(OUT_BINS)]
+            ends   = [s + BIN_SIZE for s in starts]
+            bw_handles["G1"].addEntries([chrom]*OUT_BINS, starts, ends=ends, values=g1[i].tolist())
+            bw_handles["ES"].addEntries([chrom]*OUT_BINS, starts, ends=ends, values=es[i].tolist())
+            bw_handles["MS"].addEntries([chrom]*OUT_BINS, starts, ends=ends, values=ms[i].tolist())
+            bw_handles["LS"].addEntries([chrom]*OUT_BINS, starts, ends=ends, values=ls[i].tolist())
+            bw_handles["WRT"].addEntries([chrom]*OUT_BINS, starts, ends=ends, values=wrt[i].tolist())
 
         batch_oh.clear()
         batch_meta.clear()
 
-    model.eval()
-    for idx, (chrom, ws, we) in enumerate(regions):
-        oh = fetch_one_hot(genome, chrom, ws, we, window_size)
-        batch_oh.append(oh)
-        batch_meta.append((chrom, ws, we))
-        if len(batch_oh) == args.batch_size:
-            flush()
-        if (idx + 1) % 100 == 0:
-            print(f"  {idx+1:,}/{len(regions):,} windows ...", flush=True)
-    flush()
+    for chrom in chroms:
+        if chrom not in chrom_sizes:
+            print(f"  WARNING: {chrom} not in fasta, skipping")
+            continue
+        clen = chrom_sizes[chrom]
+        for ws in range(0, clen - window_size + 1, STRIDE):
+            we = ws + window_size
+            oh = fetch_one_hot(genome, chrom, ws, we, window_size)
+            batch_oh.append(oh)
+            batch_meta.append((chrom, ws, we))
+            if len(batch_oh) == args.batch_size:
+                flush()
+            done += 1
+            if done % 100 == 0:
+                print(f"  {done:,}/{total_windows:,} windows ...", flush=True)
+        flush()  # flush at end of each chromosome to keep bw writes in order
 
-    # Write BigWigs
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    header = [(c, chrom_sizes[c]) for c in chroms if c in chrom_sizes]
-
-    for track in TRACKS:
-        out_path = out_dir / f"{track}.bw"
-        entries = sorted(records[track], key=lambda x: (chroms.index(x[0]), x[1]))
-        bw = pyBigWig.open(str(out_path), "w")
-        bw.addHeader(header)
-        for chrom, start, end, val in entries:
-            bw.addEntries([chrom], [start], ends=[end], values=[val])
+    for track, bw in bw_handles.items():
         bw.close()
-        print(f"  Written {out_path}")
+        print(f"  Written {out_dir}/{track}.bw")
 
     print(f"\nDone. {len(TRACKS)} BigWig tracks → {out_dir}")
 
@@ -139,7 +132,6 @@ def main():
     parser.add_argument("--checkpoint", required=True, help="Path to best_model.pt")
     parser.add_argument("--config",     required=True, help="Path to transformer_wt.yaml")
     parser.add_argument("--fasta",      required=True, help="Target species genome fasta")
-    parser.add_argument("--species",    required=True, help="Species name (for output labeling)")
     parser.add_argument("--chroms",     nargs="+",     help="Chromosomes to predict (default: all)")
     parser.add_argument("--out_dir",    required=True, help="Output directory for BigWig files")
     parser.add_argument("--batch_size", type=int, default=8)
