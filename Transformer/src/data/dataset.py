@@ -2,7 +2,7 @@ import random
 import numpy as np
 import torch
 import yaml
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 from torch.utils.data import Dataset
